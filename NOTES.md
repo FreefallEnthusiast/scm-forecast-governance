@@ -25,3 +25,12 @@ Judgement calls and open questions for the owner to review.
 
 - **Intermittent families dominate month-to-month noise in the total.** Their combined monthly total swings roughly 3k to 13k against a smooth-family total of about 13k pre-step, so the total series has a coefficient of variation near 13% before the step. The step to about 37k is still unmistakable, but per-family break detection on F07-F10 will lag and may miss F08 (factor only 1.3). Accepted as the honest lumpy case; phase 4 should report misses rather than tune them away.
 - **Pooled customer bias carries noise from intermittent families.** Post-break (24 months only), C1 reads 0.94 and C4 reads 1.08 overall although both are 1.00 on smooth families; the gap is realised lumpy demand running away from the expected level the customer forecasts against. Within the 20% attention threshold, so accepted. The report should state bias by customer on smooth families as well as overall if the chart looks muddled.
+
+### Metrics (`src/fgov/metrics.py`)
+
+- **MASE scale** is the in-sample seasonal-naive MAE on months 1..origin per customer x family, recomputed at every origin. Series with fewer than 13 points (the new families at every origin) fall back to the lag-1 MAE. A zero or undefined scale becomes NaN and those rows drop out of the means.
+- **Pooling.** `summarise` pools rows across origins rather than averaging per origin. Bias is the sum of errors over the sum of actuals. `period` is set by the origin month (`pre` if origin < 37), and an `all` copy is added.
+- **Coverage** is NaN for methods without intervals rather than zero.
+- **FVA** is joined on horizon, period and any extra grouping columns; the two reference methods score zero against themselves.
+- **Stability** takes revisions between consecutive available origins for the same target (so a target seen at origins t-6, t-3, t-1 yields two revisions, crossing horizons), scaled by the series' whole-history mean actual, which includes the upcycle level. Reported by method and period only.
+- **Trailing bias window** is target months in (origin - 12, origin] at the given horizon, so only realised months are used.
