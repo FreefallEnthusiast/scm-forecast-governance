@@ -128,6 +128,23 @@ def test_empirical_interval_needs_five_residuals(frames):
     assert emp.loc[sn.origin_month == 30].notna().all().all()  # 5 origins x 5 customers
 
 
+def test_empirical_interval_scales_with_customer_level(frames):
+    a = frames["actuals"]
+    sn = forecast.seasonal_naive(a, range(25, 41), (1,))
+    emp = forecast.empirical_interval(sn, a)
+    rows = sn.join(emp, rsuffix="_emp")
+    rows = rows[(rows.origin_month == 40) & (rows.family == "F01")]
+    level = forecast.series_level(a)
+    rows = rows.merge(level, on=["customer", "family", "origin_month"])
+    big, small = rows.loc[rows.level.idxmax()], rows.loc[rows.level.idxmin()]
+    assert big.level > 2 * small.level
+    up = (rows.hi80_emp - rows.forecast) / rows.level     # the same relative q90 for every customer
+    down = (rows.forecast - rows.lo80_emp) / rows.level
+    np.testing.assert_allclose(up, up.iloc[0])
+    np.testing.assert_allclose(down, down.iloc[0])
+    assert (big.hi80_emp - big.lo80_emp) > 2 * (small.hi80_emp - small.lo80_emp)
+
+
 def test_stat_baseline_three_origins_is_fast(frames):
     t0 = time.perf_counter()
     out = forecast.stat_baseline(frames["actuals"], [40, 41, 42], HORIZONS)

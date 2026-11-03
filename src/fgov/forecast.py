@@ -64,9 +64,10 @@ def _sf_forecast(model, df, conformal, n_jobs):
     if conformal:
         out = sf.forecast(h=MAX_H, df=df, level=[80],
                           prediction_intervals=ConformalIntervals(n_windows=CONFORMAL_WINDOWS, h=MAX_H))
-        return out.rename(columns={name: "forecast", f"{name}-lo-80": "lo80", f"{name}-hi-80": "hi80"})
-    return sf.forecast(h=MAX_H, df=df).rename(columns={name: "forecast"})
-
+    else:
+        out = sf.forecast(h=MAX_H, df=df)
+    assert isinstance(out, pd.DataFrame)    # pandas in, pandas out
+    return out.rename(columns={name: "forecast", f"{name}-lo-80": "lo80", f"{name}-hi-80": "hi80"})
 
 def _stat_one_origin(actuals, origin, n_jobs):
     """All series at one origin: TSB if intermittent, AutoETS otherwise, mean if short."""
@@ -145,30 +146,49 @@ def order_book(book, actuals, origins, horizons, last_month=60):
     return _finish(d, "order_book")
 
 
+def series_level(actuals, window=12):
+    """Per series and origin month: mean actual over realised months in
+    (origin - window, origin]; falls back to the mean over all months <= origin
+    when that window is empty or zero. NaN when no positive history exists."""
+    wide = actuals.pivot(index="month", columns=KEYS, values="actual").sort_index()
+    recent = wide.rolling(window, min_periods=1).mean()
+    level = recent.where(recent > 0, wide.expanding(min_periods=1).mean())
+    level = level.where(level > 0)
+    return level.stack(KEYS, future_stack=True).rename("level").reset_index().rename(
+        columns={"month": "origin_month"})
+
+
 def empirical_interval(forecast_rows, actuals, origin=None, window=12):
-    """80% interval from past residuals of the same method, horizon and family.
+    """80% interval from past relative residuals of the same method, horizon and family.
 
     A residual (actual - forecast) from origin o' with target t' is usable at
-    origin o when t' <= o (realised) and o - window < o' <= o. Residuals are
-    pooled over customers. lo80 = forecast + q10, hi80 = forecast + q90, but
-    the interval is widened if needed to contain the point forecast, and
-    clipped at zero. Fewer than 5 residuals -> NaN. Runs once over the frame;
-    `origin` only restricts which rows are returned.
+    origin o when t' <= o (realised) and o - window < o' <= o. Each residual is
+    divided by its series' level at o (see series_level, which uses months
+    <= o only), pooled over customers, and the 10th/90th percentiles are
+    multiplied back by the row's own series level at o. The interval is widened if needed to
+    contain the point forecast and clipped at zero. Fewer than 5 residuals, or
+    no level, -> NaN. Runs once over the frame; `origin` only restricts which
+    rows are returned.
     """
     act = actuals[KEYS + ["month", "actual"]].rename(columns={"month": "target_month"})
+    level = series_level(actuals, window)
+    on_level = KEYS + ["origin_month"]
     r = forecast_rows.merge(act, on=KEYS + ["target_month"]).dropna(subset=["actual", "forecast"])
-    r = r.assign(resid=r["actual"] - r["forecast"])
+    r = r.assign(resid=r["actual"] - r["forecast"]).reset_index(drop=True)
     r = r.loc[r.index.repeat(window)].assign(use_origin=np.tile(np.arange(window), len(r)))
     r["use_origin"] += r["origin_month"]
     r = r[r["use_origin"] >= r["target_month"]]
+    r = r.merge(level.rename(columns={"origin_month": "use_origin"}), on=KEYS + ["use_origin"])
+    r = r.assign(resid=r["resid"] / r["level"]).dropna(subset=["resid"])
     g = r.groupby(["method", "family", "horizon", "use_origin"])["resid"]
     q = pd.DataFrame({"q10": g.quantile(0.1), "q90": g.quantile(0.9), "n": g.size()})
     q = q[q["n"] >= 5].reset_index().rename(columns={"use_origin": "origin_month"})
     rows = forecast_rows if origin is None else forecast_rows[forecast_rows["origin_month"] == origin]
-    m = rows[["method", "family", "horizon", "origin_month", "forecast"]].merge(
-        q, on=["method", "family", "horizon", "origin_month"], how="left")
-    lo = (m["forecast"] + m["q10"].clip(upper=0)).clip(lower=0)
-    hi = (m["forecast"] + m["q90"].clip(lower=0)).clip(lower=0)
+    m = rows[["method", "family", "horizon", "origin_month", "customer", "forecast"]].merge(
+        q, on=["method", "family", "horizon", "origin_month"], how="left").merge(
+        level, on=on_level, how="left")
+    lo = (m["forecast"] + (m["q10"] * m["level"]).clip(upper=0)).clip(lower=0)
+    hi = (m["forecast"] + (m["q90"] * m["level"]).clip(lower=0)).clip(lower=0)
     return pd.DataFrame({"lo80": lo.to_numpy(), "hi80": hi.to_numpy()}, index=rows.index)
 
 
