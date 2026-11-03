@@ -1,5 +1,12 @@
+# Generated data files stay out of git; the report, its tables and charts are committed
+# so the README renders without running the code.
 outputs/*
 !outputs/.gitkeep
+!outputs/charts/
+!outputs/charts/*.png
+!outputs/governance_report.md
+!outputs/planner_table.csv
+!outputs/summary_metrics.csv
 __pycache__/
 *.py[cod]
 *.egg-info/

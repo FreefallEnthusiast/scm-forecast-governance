@@ -145,3 +145,7 @@ By family type at 3 months (with the book): on intermittent families the blend r
 ### 3. Interval coverage in the report
 
 Section 3 now states the stat baseline's achieved 80% coverage at 3 months pre- and post-break against the blend's, with one sentence on what the gap means. The numbers are generated from the summary table at every run.
+
+### 4. Committed outputs
+
+`outputs/charts/*.png`, `outputs/governance_report.md`, `outputs/planner_table.csv` and `outputs/summary_metrics.csv` are committed so the README renders on GitHub without a run; the data files stay ignored. The README links charts as `outputs/charts/...` from the repo root; the report links them as `charts/...` and the docs as `../docs/...` from `outputs/`, so both resolve where each file lives. Rerunning `python -m fgov.run` rewrites the committed files; a changed number shows up as a diff.

@@ -12,6 +12,20 @@ These numbers come from `outputs/governance_report.md`, default seed.
 
 Across 20 seeds (`scripts/seed_study.py`) the picture holds: C5's raw bias after the break is +49% to +80% and falls to 0% to +21% after correction, the total break is flagged 1 to 4 months after onset, and the blend adds 55 to 68 pp over seasonal naive at 3 months. Per-family detection within four months ranges from 4 to 8 of the 10 established families, so the spec's 10 of 12 is not met on any seed. The ranges are in `scripts/seed_study_20seeds.csv` and `NOTES.md`.
 
+## Charts
+
+The five charts below are the committed output of the default run. The full report is [outputs/governance_report.md](outputs/governance_report.md) and the planner table is [outputs/planner_table.csv](outputs/planner_table.csv).
+
+![Total demand with the detected break and detection lag](outputs/charts/total_demand_and_break.png)
+
+![Customer bias by horizon, raw and bias-corrected](outputs/charts/customer_bias_by_horizon.png)
+
+![Value added over seasonal naive by method, before and after the break](outputs/charts/fva_by_method.png)
+
+![C5 on one long-lead family through the step](outputs/charts/tracking_c5.png)
+
+![Stability against accuracy by method](outputs/charts/stability_vs_accuracy.png)
+
 ## How to run
 
 ```bash
