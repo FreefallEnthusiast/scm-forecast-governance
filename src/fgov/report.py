@@ -121,8 +121,10 @@ def build_tables(frames, forecasts, choices, alerts, onset=breaks.ONSET):
                               columns={"month": "target_month", "actual": "value"})[cols]],
                          ignore_index=True)
     total_demand = breaks.monthly_totals(actuals, "total")["TOTAL"].fillna(0)
+    typed = evaluated.merge(fams[["family", "is_intermittent"]], on="family")
     return {"summary": summary, "by_customer": by_customer,
             "by_family": metrics.summarise(evaluated, by=("family",)), "stability": stab,
+            "by_type": metrics.fva(metrics.summarise(typed, by=("is_intermittent",))),
             "alerts": alerts, "planner": planner_table(frames, forecasts, choices, alerts),
             "tracking": tracking, "context": context,
             "total_demand": total_demand.rename("total").reset_index()}
@@ -332,8 +334,18 @@ def write_report(tables, outdir: str | Path = "outputs"):
                      if pd.notna(base_pre)
                      else f"stat baseline {base_post:+.0f} pp; no pre-break origins in this run")
     blend_h1 = fv["all"].get((1, "blend"), np.nan)
-    book_note = (f" At 1 month ahead the blend beats seasonal naive by {blend_h1:.0f} pp; that is the "
-                 "confirmed order book doing the work, not a model." if blend_h1 > 60 else "")
+    bt = tables["by_type"]
+    bt = bt[(bt.horizon == TRACK_HORIZON) & (bt.period == ("post" if (bt.period == "post").any() else "all"))]
+    fva_of = lambda m, inter: bt[(bt.method == m) & (bt.is_intermittent == inter)].fva_vs_naive.max()  # noqa: E731
+    singles = pd.Series({m: fva_of(m, False) for m in ("stat_baseline", "customer_bias_corrected", "order_book")})
+    best_smooth = singles.idxmax() if singles.notna().any() else "stat_baseline"
+    book_note = (f"The blend's lead is routing, not a model. On the intermittent families it hands the forecast "
+                 f"to the order book, which still sees most lumpy orders {TRACK_HORIZON} months out and adds "
+                 f"{num(fva_of('order_book', True), '+.0f')} pp there against {num(fva_of('customer_bias_corrected', True), '+.0f')} pp "
+                 f"for the bias-corrected customer forecast. On the smooth families it averages the three sources and "
+                 f"adds {num(fva_of('blend', False), '+.0f')} pp, above the best single source ({name(best_smooth).lower()}, "
+                 f"{num(singles.max(), '+.0f')} pp), because their errors are not aligned. At 1 month ahead the blend "
+                 f"adds {num(blend_h1, '+.0f')} pp, and there too it is the confirmed order book doing the work.")
     mase = s[(s.horizon == TRACK_HORIZON) & (s.period == "all")].set_index("method").mase
     stab = tables["stability"][tables["stability"].period == "all"].set_index("method").stability
     missed = ", ".join(sorted(alerts.family[alerts.break_detected_at_origin.isna() & alerts.reason.ne("new_family")]))
@@ -378,7 +390,7 @@ Families never detected: {missed or "none"}.
 
 ## 4. Which forecast source to use where
 
-After the break {name(c.best_post).lower()} adds {num(c.best_post_fva, "+.0f")} pp over seasonal naive at {TRACK_HORIZON} months ({baseline_note}), and {int(plan.attention_flag.sum())} of {len(plan)} planner rows need attention.{book_note}
+After the break {name(c.best_post).lower()} adds {num(c.best_post_fva, "+.0f")} pp over seasonal naive at {TRACK_HORIZON} months ({baseline_note}), and {int(plan.attention_flag.sum())} of {len(plan)} planner rows need attention. {book_note}
 
 {img("fva_by_method")}
 

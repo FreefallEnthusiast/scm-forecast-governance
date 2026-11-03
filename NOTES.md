@@ -107,3 +107,37 @@ Twenty seeds (0..19) through the full pipeline; results in `scripts/seed_study_2
 ### 1. Repository scrub
 
 - `PROPOSAL.md` (an internal build plan) is removed from the working tree and purged from history, so the repository reads as a reference implementation. References to it, and process narrative in these notes, are removed. Commit trailers no longer name a model.
+
+### 2. Blend FVA investigation
+
+Question: the blend adds about +60 pp over seasonal naive at 3 months, pre- and post-break, while its best single input (bias-corrected customer forecast) adds +33 pp post-break. Three checks on the default seed.
+
+**(a) Error correlation at 3 months** (errors scaled by series mean actual, pooled over series; "stat" = stat baseline, "cust" = bias-corrected customer, "book" = order book):
+
+| group | stat vs cust | stat vs book | cust vs book |
+|---|---|---|---|
+| all series, pre | 0.85 | 0.23 | 0.25 |
+| all series, post | 0.89 | 0.12 | 0.14 |
+| smooth families, pre | -0.28 | -0.36 | 0.09 |
+| smooth families, post | -0.12 | -0.13 | 0.07 |
+| intermittent families, pre | 0.91 | 0.30 | 0.28 |
+| intermittent families, post | 0.94 | 0.13 | 0.16 |
+
+On smooth families the three sources' errors are uncorrelated or negatively correlated, so averaging them cancels error. On intermittent families the stat baseline and the customer forecast both forecast the expected level and the lumpy actual drives both errors the same way (0.9 correlation); only the order book carries different information.
+
+**(b) Leakage check.** Every actual after month 45 was multiplied by a random factor in 0.3 to 3.0 and the whole pipeline rerun. All 20,920 forecast rows, intervals and blend choices at origins up to 45, and every detection at origins up to 45, were identical to the unperturbed run; 63% of forecasts at later origins changed, as they should. The blend's choice at an origin uses only origins strictly before it with targets realised by it; the bias and fill ratios use only realised targets; the average uses the three inputs' own origin-time forecasts. No leak found.
+
+**(c) Blend without the order book** (average = stat baseline + bias-corrected only), FVA vs naive in pp:
+
+| horizon, period | blend with book | blend without book | best single input |
+|---|---|---|---|
+| 1, pre | +72 | +34 | order book +67 |
+| 1, post | +76 | +45 | order book +74 |
+| 3, pre | +60 | +33 | bias-corrected +26 |
+| 3, post | +60 | +40 | bias-corrected +33 |
+| 6, pre | +40 | +35 | bias-corrected +27 |
+| 6, post | +25 | +37 | bias-corrected +30 |
+
+By family type at 3 months (with the book): on intermittent families the blend routes to the order book at every origin and adds +73 pre / +69 post, where the bias-corrected customer forecast adds only +12 / +8. On smooth families the blend averages and adds +55 / +56, above the best single source (+32 / +43). Without the book the intermittent figure falls to +11 / +10 and the smooth figure to +43 / +52.
+
+**Finding.** The +60 pp at 3 months is real and not leaked, but about two thirds of it is the order book: lumpy orders are mostly on the book three months out (80% visibility in the generator), so the blend hands intermittent families to it. The rest is genuine averaging gain on smooth families, where the inputs' errors are not aligned. At 6 months the order book hurts and the blend without it is as good or better. The report's section 4 now states the decomposition with generated numbers, and the README headline quotes the honest version.
