@@ -10,6 +10,8 @@ These numbers come from `outputs/governance_report.md`, default seed.
 - Total demand stepped from 19,651 to 33,940 units a month. The alert fired at origin 39, 2 months after the onset at month 37.
 - After the break, the blend adds +60 pp over seasonal naive at 3 months. The stat baseline adds +6 pp before the break and +20 pp after. At 1 month ahead the blend beats seasonal naive by 75 pp, but the confirmed order book is doing that work, not a model.
 
+Across 20 seeds (`scripts/seed_study.py`) the picture holds: C5's raw bias after the break is +49% to +80% and falls to 0% to +21% after correction, the total break is flagged 1 to 4 months after onset, and the blend adds 55 to 68 pp over seasonal naive at 3 months. Per-family detection within four months ranges from 4 to 8 of the 10 established families, so the spec's 10 of 12 is not met on any seed. The ranges are in `scripts/seed_study_20seeds.csv` and `NOTES.md`.
+
 ## How to run
 
 ```bash

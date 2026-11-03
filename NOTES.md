@@ -78,3 +78,26 @@ A separate review pass over `src/fgov` and `tests` returned ten findings; nine w
 - **Applied.** The step onset is now threaded from `SynthParams.step_onset` through `alert_table`, `evaluate`, `stability` and the report (it was hardcoded as 37 in three places; a test now changes it to 40 and checks the labels follow). `alert_table` emits `break_month` so the chart and the alert can no longer disagree (the report used to re-run PELT with the default penalty). NaN guards: a new family not yet launched by the last scanned origin, and a planner table with no horizon-1 rows. A zero trailing bias ratio now falls back to the raw forecast instead of producing infinity. The report never prints "nan". The worst customer, best post-break method and calmest and jumpiest methods are derived once in `build_tables` and shared by chart titles and text. The total demand series and the series keys are defined once. The tracking chart window follows the origins passed in. Outputs on the default seed were byte-identical before and after.
 - **Skipped.** `choose_penalty` refits PELT for every grid value although only the penalty changes; it costs about a second in the tests and is not worth the extra code.
 - **Package size** is unchanged at about 1,240 lines in `src/fgov`.
+
+### Robustness across seeds (`scripts/seed_study.py`)
+
+Twenty seeds (0..19) through the full pipeline; results in `scripts/seed_study_20seeds.csv`. Median, min and max:
+
+| quantity | median | min | max |
+|---|---|---|---|
+| Drawn total step factor | 1.97 | 1.80 | 2.18 |
+| Total-series detection lag (months) | 3 | 1 | 4 |
+| Established families detected within 4 months (of 10) | 6 | 4 | 8 |
+| Established families never detected | 1 | 0 | 3 |
+| C2 raw bias, 6 months, pre-break | +31% | +21% | +46% |
+| C3 raw bias, 6 months, pre-break | -13% | -23% | -3% |
+| C5 raw bias, 6 months, post-break | +61% | +49% | +80% |
+| C5 corrected bias, 6 months, post-break | +13% | 0% | +21% |
+| Blend FVA vs naive, 3 months, post-break (pp) | 63 | 55 | 68 |
+| Stat baseline FVA vs naive, 3 months, post-break (pp) | 25 | 18 | 27 |
+| Blend 80% coverage, 3 months | 0.73 | 0.71 | 0.74 |
+| Stat baseline 80% coverage, 3 months | 0.57 | 0.55 | 0.60 |
+
+- The customer-bias and value-added findings are stable. The total break is always flagged within four months. Per-family detection within four months never reaches the spec's 10 of 12 on any seed (best is 8 of 10 established plus the 2 new families by rule); the spec's expectation is too optimistic for lumpy families at these step sizes and penalties chosen without hindsight. The default seed, at 7 of 10, is slightly better than the median.
+- The blend's one-month FVA stays above 60% on every seed because the confirmed order book carries it; the three-month figure sits at 55 to 68.
+- Stat baseline interval coverage is 0.55 to 0.60 on every seed: the two-window conformal intervals under-cover by construction, which the report states.
