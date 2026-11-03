@@ -157,3 +157,26 @@ Opening paragraph split in three with the synthetic-data sentence first; a fourt
 ### 6. Chart check
 
 All five titles are now one line (under 90 characters); the "N of M pairs closer to zero" detail moved from the bias chart title into section 2 of the report, and the attention band is a legend entry instead of a title note. The tracking chart's legend moved to the lower right so it no longer sits over the detection-lag band.
+
+### 7. Final gate
+
+From an empty `outputs/` directory, `python -m fgov.run` reproduced every committed output byte for byte in about 45 s; 50 tests pass; `ruff check .` and `pyright src` are clean. The branch is merged into `main` with a merge commit.
+
+### 8. Open questions for the owner
+
+Things I was unsure about in this round:
+
+- `PROPOSAL.md` was purged from history, not just deleted, so a public clone cannot recover it. The pre-purge head is kept only as a local tag in the build container and was not pushed. If you wanted it recoverable, say so before the container is gone.
+- Commit trailers keep a tool-session link; they no longer name a model. Remove the trailers entirely if even that is too much.
+- No `main` existed, so `main` was created from the first commit and the branch merged into it. The repository's default branch on the hosting side still points at the working branch and must be switched to `main` in the repository settings before the branch is deleted.
+- The README's "without the order book the blend adds +40 pp" comes from the investigation script, not from the run; every other README number is regenerated. If that bothers you, drop that clause or add the two-input blend as a seventh method (about 15 lines).
+- The seed study was run before this round; this round changed only report text, chart layout and the README, and the default-seed outputs were verified unchanged, so its ranges still hold.
+
+Numbers in the report I would not defend without the caveat beside them:
+
+- **Blend +60 pp at 3 months.** Real and leak-free, but two thirds of it rests on the generator's assumption that 80% of lumpy orders are on the book three months out. On a real book that share is an empirical question.
+- **Stat baseline coverage 50% before the break.** Two causes are mixed: conformal intervals from only two calibration windows under-cover everywhere, and origins 31 to 36 forecast into the step. The sentence in section 3 attributes it to stale history; that is the larger cause post-break but not the only one pre-break.
+- **Seasonal naive MASE of about 1.5.** A reader who knows MASE expects the scaling method to score near 1. It scores higher out of sample because pre-break origins forecast into the step and lumpy series are rougher out of sample than in. True, but it invites a question.
+- **C1 reads 4 to 8% under-forecast although it was generated unbiased.** The drift comes from pooling intermittent families where the customer forecasts the expected level and 24 post-break months are too few for the lumps to average out.
+- **Per-family detection, 9 of 12.** Below the spec on every seed. The honest number, but a reader will ask whether the penalty could have been chosen better; the answer is that it was chosen without hindsight and that is the point.
+- **C5 trailing bias +54% in the planner table.** Measured at one-month horizon over the last 12 realised months at origin 59, while the headline +64% is at six months pooled over all origins. Both are right; they are different quantities and the table does not say so.
