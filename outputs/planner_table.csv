@@ -1,0 +1,61 @@
+origin_month,target_month,customer,family,forecast,lo80,hi80,recommended_source,customer_bias_trailing,history_unreliable,attention_flag,attention_reason
+59,60,C5,F01,490.6,447.3,535.8,average,1.544,True,True,customer bias +54%
+59,60,C5,F02,461.1,407.7,510.5,average,1.544,True,True,customer bias +54%
+59,60,C5,F03,252.6,227.2,273.4,average,1.544,True,True,customer bias +54%
+59,60,C5,F04,284.2,257.0,324.6,average,1.544,True,True,customer bias +54%
+59,60,C5,F05,568.3,515.2,641.9,average,1.544,True,True,customer bias +54%
+59,60,C5,F06,491.8,436.5,552.4,average,1.544,True,True,customer bias +54%
+59,60,C5,F07,828.6,811.2,850.7,order_book,1.544,True,True,customer bias +54%
+59,60,C5,F08,0.0,0.0,3.0,order_book,1.544,False,True,customer bias +54%
+59,60,C5,F09,336.4,293.6,375.1,order_book,1.544,True,True,customer bias +54%
+59,60,C5,F10,0.0,0.0,41.0,order_book,1.544,True,True,customer bias +54%
+59,60,C5,F11,144.4,130.5,172.5,customer_bias_corrected,1.544,False,True,customer bias +54%
+59,60,C5,F12,25.9,19.6,34.6,customer_bias_corrected,1.544,False,True,customer bias +54%
+59,60,C1,F01,968.8,883.6,1057.7,average,0.964,True,False,
+59,60,C1,F02,1161.3,1042.8,1271.0,average,0.964,True,False,
+59,60,C1,F03,617.4,561.3,663.3,average,0.964,True,False,
+59,60,C1,F04,652.5,596.6,735.5,average,0.964,True,False,
+59,60,C1,F05,925.5,851.4,1028.1,average,0.964,True,False,
+59,60,C1,F06,2177.2,1972.2,2402.1,average,0.964,True,False,
+59,60,C1,F07,1511.0,1398.4,1653.1,order_book,0.964,True,False,
+59,60,C1,F08,0.0,0.0,11.9,order_book,0.964,False,False,
+59,60,C1,F09,0.0,0.0,2.8,order_book,0.964,True,False,
+59,60,C1,F10,2347.5,2151.7,2464.0,order_book,0.964,True,False,
+59,60,C1,F11,180.6,161.5,219.0,customer_bias_corrected,0.964,False,False,
+59,60,C1,F12,249.1,220.4,288.9,customer_bias_corrected,0.964,False,False,
+59,60,C2,F01,1049.2,954.5,1147.9,average,0.981,True,False,
+59,60,C2,F02,832.2,720.3,935.8,average,0.981,True,False,
+59,60,C2,F03,356.9,316.2,390.2,average,0.981,True,False,
+59,60,C2,F04,444.7,408.8,497.9,average,0.981,True,False,
+59,60,C2,F05,1394.0,1253.4,1588.9,average,0.981,True,False,
+59,60,C2,F06,1341.8,1188.0,1510.4,average,0.981,True,False,
+59,60,C2,F07,0.0,0.0,187.1,order_book,0.981,True,False,
+59,60,C2,F08,0.0,0.0,6.5,order_book,0.981,False,False,
+59,60,C2,F09,0.0,0.0,37.0,order_book,0.981,True,False,
+59,60,C2,F10,458.2,381.5,503.8,order_book,0.981,True,False,
+59,60,C2,F11,371.0,340.5,432.7,customer_bias_corrected,0.981,False,False,
+59,60,C2,F12,241.6,212.3,282.2,customer_bias_corrected,0.981,False,False,
+59,60,C3,F01,762.7,686.2,842.5,average,0.914,True,False,
+59,60,C3,F02,710.8,637.3,778.8,average,0.914,True,False,
+59,60,C3,F03,445.4,398.7,483.5,average,0.914,True,False,
+59,60,C3,F04,535.9,486.1,609.9,average,0.914,True,False,
+59,60,C3,F05,1003.4,917.2,1122.9,average,0.914,True,False,
+59,60,C3,F06,1458.4,1302.5,1629.4,average,0.914,True,False,
+59,60,C3,F07,0.0,0.0,22.6,order_book,0.914,True,False,
+59,60,C3,F08,0.0,0.0,4.6,order_book,0.914,False,False,
+59,60,C3,F09,0.0,0.0,28.9,order_book,0.914,True,False,
+59,60,C3,F10,0.0,0.0,38.4,order_book,0.914,True,False,
+59,60,C3,F11,212.3,192.8,251.8,customer_bias_corrected,0.914,False,False,
+59,60,C3,F12,116.0,100.7,137.3,customer_bias_corrected,0.914,False,False,
+59,60,C4,F01,452.0,407.9,498.0,average,1.052,True,False,
+59,60,C4,F02,685.8,613.1,753.0,average,1.052,True,False,
+59,60,C4,F03,462.3,414.6,501.2,average,1.052,True,False,
+59,60,C4,F04,211.7,187.7,247.4,average,1.052,True,False,
+59,60,C4,F05,655.9,594.3,741.3,average,1.052,True,False,
+59,60,C4,F06,531.3,462.8,606.4,average,1.052,True,False,
+59,60,C4,F07,0.0,0.0,61.4,order_book,1.052,True,False,
+59,60,C4,F08,0.0,0.0,1.9,order_book,1.052,False,False,
+59,60,C4,F09,0.0,0.0,27.4,order_book,1.052,True,False,
+59,60,C4,F10,0.0,0.0,30.1,order_book,1.052,True,False,
+59,60,C4,F11,265.2,240.2,315.8,customer_bias_corrected,1.052,False,False,
+59,60,C4,F12,71.3,62.1,84.1,customer_bias_corrected,1.052,False,False,
