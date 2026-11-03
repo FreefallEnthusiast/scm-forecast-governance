@@ -90,9 +90,9 @@ def alert_table(actuals: pd.DataFrame, onset: int = ONSET, origins=None,
     """One row per family plus TOTAL.
 
     pre_break_level: mean monthly total over the 12 months before onset.
-    post_break_level: mean monthly total from the detected break month to the
-    last origin scanned (NaN if never detected). New families are flagged by
-    rule at launch (reason "new_family"); their post level runs from launch.
+    post_break_level: mean monthly total from break_month (PELT break month at
+    the detection origin) to the last origin scanned; both NaN if never detected.
+    New families: reason "new_family", break month = launch (NaN if not launched yet).
     """
     origins = list(DEFAULT_ORIGINS if origins is None else origins)
     new = set(actuals.loc[actuals.is_new, "family"])
@@ -106,15 +106,15 @@ def alert_table(actuals: pd.DataFrame, onset: int = ONSET, origins=None,
         s = full[full.index <= origins[-1]]
         pre = s[(s.index >= onset - 12) & (s.index < onset)].mean()
         if name in new:
-            launch = int(s.dropna().index.min())
-            at, reason, start, pre = float(launch), "new_family", launch, np.nan
+            at = start = float(s.dropna().index.min()) if s.notna().any() else np.nan
+            reason, pre = "new_family", np.nan
         else:
             at = first.get(name, np.nan)
             reason = "detected" if pd.notna(at) else np.nan
             bm = scanned[(scanned.name == name) & (scanned.origin == at)].break_month
-            start = int(bm.iloc[0]) if pd.notna(at) else None
-        post = s[s.index >= start].mean() if start is not None else np.nan
-        rows.append({"family": name, "break_detected_at_origin": at,
+            start = float(bm.iloc[0]) if pd.notna(at) else np.nan
+        post = s[s.index >= start].mean() if pd.notna(start) else np.nan
+        rows.append({"family": name, "break_detected_at_origin": at, "break_month": start,
                      "months_after_onset": at - onset if pd.notna(at) else np.nan,
                      "pre_break_level": pre, "post_break_level": post, "reason": reason})
     return pd.DataFrame(rows)

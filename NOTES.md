@@ -70,3 +70,11 @@ Judgement calls and open questions for the owner to review.
 - **Attention triggers:** trailing customer bias beyond 20%, recommended source different from the previous origin's choice, or the family's break detected at exactly this origin. `attention_reason` lists which fired.
 - **Charts.** One colour per method across all charts; the pre/post split uses two greys. The break line is the PELT break month at the detection origin (36); the shaded lag runs from onset to detection. The tracking family is the long-lead family with the largest step factor (F04).
 - **Runner** deletes only the files it writes, not the output folder.
+
+### Independent code review (after the first full run)
+
+A separate review pass over `src/fgov` and `tests` returned ten findings; nine were applied, one skipped.
+
+- **Applied.** The step onset is now threaded from `SynthParams.step_onset` through `alert_table`, `evaluate`, `stability` and the report (it was hardcoded as 37 in three places; a test now changes it to 40 and checks the labels follow). `alert_table` emits `break_month` so the chart and the alert can no longer disagree (the report used to re-run PELT with the default penalty). NaN guards: a new family not yet launched by the last scanned origin, and a planner table with no horizon-1 rows. A zero trailing bias ratio now falls back to the raw forecast instead of producing infinity. The report never prints "nan". The worst customer, best post-break method and calmest and jumpiest methods are derived once in `build_tables` and shared by chart titles and text. The total demand series and the series keys are defined once. The tracking chart window follows the origins passed in. Outputs on the default seed were byte-identical before and after.
+- **Skipped.** `choose_penalty` refits PELT for every grid value although only the penalty changes; it costs about a second in the tests and is not worth the extra code.
+- **Package size** is unchanged at about 1,240 lines in `src/fgov`.

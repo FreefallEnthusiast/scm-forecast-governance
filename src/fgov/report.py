@@ -16,7 +16,7 @@ import pandas as pd  # noqa: E402
 
 from fgov import breaks, metrics  # noqa: E402
 
-ONSET, HISTORY_END, TRACK_CUSTOMER, TRACK_HORIZON = breaks.ONSET, 48, "C5", 3
+HISTORY_END, TRACK_CUSTOMER, TRACK_HORIZON = 48, "C5", 3
 CUSTOMER_METHODS = ["customer_raw", "customer_bias_corrected"]
 LABEL = {"seasonal_naive": "Seasonal naive", "stat_baseline": "Stat baseline",
          "customer_raw": "Customer raw", "customer_bias_corrected": "Customer bias-corrected",
@@ -44,13 +44,8 @@ def pct(x) -> str:
     return "n/a" if pd.isna(x) else f"{100 * x:+.0f}%"
 
 
-def detected_break_month(actuals, series_name, origin):
-    """Break month PELT reported at the detection origin (alert table has only the origin)."""
-    if pd.isna(origin):
-        return np.nan
-    series = {**breaks.monthly_totals(actuals, "total"), **breaks.monthly_totals(actuals)}[series_name]
-    month = breaks.detect_at_origin(series, int(origin), breaks.DEFAULT_PENALTY)
-    return np.nan if month is None else month
+def num(x, fmt) -> str:
+    return "n/a" if pd.isna(x) else format(x, fmt)
 
 
 def planner_table(frames, forecasts, choices, alerts):
@@ -62,6 +57,8 @@ def planner_table(frames, forecasts, choices, alerts):
     """
     actuals = frames["actuals"]
     h1 = forecasts[(forecasts.method == "blend") & (forecasts.horizon == 1)]
+    if h1.empty:
+        raise ValueError("planner table needs horizon-1 blend rows")
     origin = int(h1.origin_month.max())
     blend = h1[h1.origin_month == origin][["customer", "family", "forecast", "lo80", "hi80"]]
     out = actuals[["customer", "family"]].drop_duplicates().merge(blend, how="left")
@@ -88,43 +85,52 @@ def planner_table(frames, forecasts, choices, alerts):
                            ascending=[False, True, True]).reset_index(drop=True)
 
 
-def build_tables(frames, forecasts, choices, alerts):
+def build_tables(frames, forecasts, choices, alerts, onset=breaks.ONSET):
     """Spec tables plus three the charts and text need: tracking, context, total_demand."""
     actuals, fams = frames["actuals"], frames["families"]
-    evaluated = metrics.evaluate(forecasts, actuals)
+    evaluated = metrics.evaluate(forecasts, actuals, break_month=onset)
+    summary = metrics.fva(metrics.summarise(evaluated))
+    by_customer = metrics.summarise(evaluated, by=("customer",))
+    stab = metrics.stability(forecasts, actuals, break_month=onset)
     long_lead = fams[fams.is_long_lead]                 # F01-F04 in the default panel
     fam = long_lead.loc[long_lead.step_factor.idxmax(), "family"]
-    total = alerts[alerts.family == "TOTAL"].iloc[0]
-    fam_at = alerts[alerts.family == fam].break_detected_at_origin.iloc[0]
+    total, track = alerts[alerts.family == "TOTAL"].iloc[0], alerts[alerts.family == fam].iloc[0]
+    # Headlines picked once here so chart titles and report text cannot disagree.
+    raw = by_customer[(by_customer.period == "all") & (by_customer.method == "customer_raw")]
+    worst = raw.loc[raw.bias.abs().idxmax()]
+    post = summary[(summary.horizon == TRACK_HORIZON) & (summary.period == "post")
+                   & (summary.method != "seasonal_naive")].set_index("method").fva_vs_naive
+    st = stab[stab.period == "all"].set_index("method").stability
     context = pd.DataFrame([{
-        "total_detected_at": total.break_detected_at_origin,
-        "total_months_after_onset": total.months_after_onset,
-        "total_break_month": detected_break_month(actuals, "TOTAL", total.break_detected_at_origin),
+        "onset": onset, "total_detected_at": total.break_detected_at_origin,
+        "total_months_after_onset": total.months_after_onset, "total_break_month": total.break_month,
         "total_pre_level": total.pre_break_level, "total_post_level": total.post_break_level,
         "track_family": fam, "track_step_factor": long_lead.step_factor.max(),
-        "track_detected_at": fam_at, "track_break_month": detected_break_month(actuals, fam, fam_at)}])
+        "track_detected_at": track.break_detected_at_origin, "track_break_month": track.break_month,
+        "worst_customer": worst.customer, "worst_horizon": worst.horizon, "worst_bias": worst.bias,
+        "best_post": post.idxmax() if post.notna().any() else "blend", "best_post_fva": post.max(),
+        "calm": st.drop("seasonal_naive", errors="ignore").idxmin(), "jumpy": st.idxmax()}])
     f, a = forecasts, actuals
+    lo, hi = f.origin_month.min(), f[f.horizon == TRACK_HORIZON].origin_month.max()
     sel = f[(f.customer == TRACK_CUSTOMER) & (f.family == fam) & (f.horizon == TRACK_HORIZON)
-            & f.origin_month.between(25, 57) & f.method.isin(["stat_baseline"] + CUSTOMER_METHODS)]
-    act = a[(a.customer == TRACK_CUSTOMER) & (a.family == fam) & (a.month >= 25)]
+            & f.origin_month.between(lo, hi) & f.method.isin(["stat_baseline"] + CUSTOMER_METHODS)]
+    act = a[(a.customer == TRACK_CUSTOMER) & (a.family == fam) & (a.month >= lo)]
     cols = ["target_month", "series", "value"]
     tracking = pd.concat([sel.rename(columns={"method": "series", "forecast": "value"})[cols],
                           act.assign(series="actual").rename(
                               columns={"month": "target_month", "actual": "value"})[cols]],
                          ignore_index=True)
-    total_demand = actuals.groupby("month")["actual"].sum(min_count=0).fillna(0)
-    return {"summary": metrics.fva(metrics.summarise(evaluated)),
-            "by_customer": metrics.summarise(evaluated, by=("customer",)),
-            "by_family": metrics.summarise(evaluated, by=("family",)),
-            "stability": metrics.stability(forecasts, actuals),
+    total_demand = breaks.monthly_totals(actuals, "total")["TOTAL"].fillna(0)
+    return {"summary": summary, "by_customer": by_customer,
+            "by_family": metrics.summarise(evaluated, by=("family",)), "stability": stab,
             "alerts": alerts, "planner": planner_table(frames, forecasts, choices, alerts),
             "tracking": tracking, "context": context,
             "total_demand": total_demand.rename("total").reset_index()}
 
 
-def tracking_bias(tracking, series):
+def tracking_bias(tracking, series, onset):
     """Sum of forecasts over sum of actuals minus one, for target months from the onset."""
-    post = tracking[tracking.target_month >= ONSET]
+    post = tracking[tracking.target_month >= onset]
     d = post[post.series == series].set_index("target_month").value
     a = post[post.series == "actual"].set_index("target_month").value.reindex(d.index)
     return d.sum() / a.sum() - 1 if a.sum() > 0 else np.nan
@@ -146,14 +152,14 @@ def finish(fig, ax, outdir, chart, title, xlabel, ylabel, legend=None, **title_k
     return path
 
 
-def mark_break(ax, break_month, detected_at, top):
+def mark_break(ax, break_month, detected_at, top, onset):
     """Line at the detected break month; shaded lag from onset to the detection origin."""
     if pd.isna(break_month):
         return
     ax.axvline(break_month, color=INK2, lw=1.2, label=f"Detected break (month {break_month:.0f})")
     if pd.notna(detected_at):
-        ax.axvspan(ONSET, detected_at, color=LAG, alpha=0.14, lw=0,
-                   label=f"Detection lag (onset {ONSET} to alert at origin {detected_at:.0f})")
+        ax.axvspan(onset, detected_at, color=LAG, alpha=0.14, lw=0,
+                   label=f"Detection lag (onset {onset} to alert at origin {detected_at:.0f})")
         ax.plot([detected_at], [top], marker="v", color=LAG, ms=8, clip_on=False, ls="")
 
 
@@ -169,7 +175,7 @@ def chart_total(tables, outdir):
     top = ax.get_ylim()[1]
     ax.axvline(HISTORY_END + 0.5, color=AXIS, lw=0.8)
     ax.text(HISTORY_END + 1, top * 0.04, "holdout", color=INK2, fontsize=9)
-    mark_break(ax, c.total_break_month, c.total_detected_at, top)
+    mark_break(ax, c.total_break_month, c.total_detected_at, top, c.onset)
     if pd.notna(c.total_detected_at):
         ax.annotate(f"detected {c.total_months_after_onset:.0f} months after onset",
                     xy=(c.total_detected_at + 0.3, top), xytext=(c.total_detected_at + 2, top * 0.97),
@@ -179,12 +185,12 @@ def chart_total(tables, outdir):
     ax.set_xlim(1, t.month.max())
     return finish(fig, ax, outdir, CHARTS[0], f"Total demand rose from {c.total_pre_level / 1000:.1f}k to "
                   f"{c.total_post_level / 1000:.1f}k units a month; the break was flagged "
-                  f"{c.total_months_after_onset:.0f} months after onset",
+                  f"{num(c.total_months_after_onset, '.0f')} months after onset",
                   "Month", "Total demand (thousand units / month)", {"loc": "upper left"})
 
 
 def chart_bias(tables, outdir):
-    b = tables["by_customer"]
+    b, c = tables["by_customer"], tables["context"].iloc[0]
     b = b[(b.period == "all") & b.method.isin(CUSTOMER_METHODS)]
     horizons, customers = sorted(b.horizon.unique()), sorted(b.customer.unique())
     fig, axes = plt.subplots(1, len(horizons), figsize=(11, 4), sharey=True, squeeze=False)
@@ -198,12 +204,11 @@ def chart_bias(tables, outdir):
         ax.set_xticks(x, customers)
         ax.set_title(f"{h}-month horizon", fontweight="normal")
         ax.set_xlabel("Customer")
-    raw = b[b.method == "customer_raw"]
-    worst = raw.loc[raw.bias.abs().idxmax()]
+    raw = b[b.method == "customer_raw"].set_index(["customer", "horizon"]).bias
     cor = b[b.method == "customer_bias_corrected"].set_index(["customer", "horizon"]).bias
-    closer = cor.abs() <= raw.set_index(["customer", "horizon"]).bias.abs()
-    fig.suptitle(f"{worst.customer} is the most biased customer forecast ({100 * worst.bias:+.0f}% at "
-                 f"{worst.horizon} months); bias correction moves {closer.sum()} of {len(closer)} "
+    closer = cor.abs() <= raw.abs()
+    fig.suptitle(f"{c.worst_customer} is the most biased customer forecast ({pct(c.worst_bias)} at "
+                 f"{c.worst_horizon} months); bias correction moves {closer.sum()} of {len(closer)} "
                  f"customer-horizon pairs closer to zero\nGrey band: +/-20% attention threshold",
                  fontweight="bold", fontsize=11)
     return finish(fig, axes[0][0], outdir, CHARTS[1], None, "Customer",
@@ -211,7 +216,7 @@ def chart_bias(tables, outdir):
 
 
 def chart_fva(tables, outdir):
-    s = tables["summary"]
+    s, c = tables["summary"], tables["context"].iloc[0]
     s = s[(s.horizon == TRACK_HORIZON) & (s.method != "seasonal_naive") & (s.period != "all")]
     methods = [m for m in LABEL if m in set(s.method)]
     fig, ax = plt.subplots(figsize=(9, 4.2))
@@ -222,10 +227,8 @@ def chart_fva(tables, outdir):
                  for p, v in zip(("pre", "post"), vals, strict=True)])
     ax.axhline(0, color=INK, lw=0.8)
     ax.set_xticks(x, [LABEL[m] for m in methods])
-    post = vals[1]
-    best = post.idxmax() if post.notna().any() else methods[0]
-    return finish(fig, ax, outdir, CHARTS[2], f"After the break {name(best).lower()} adds the most value over "
-                  f"seasonal naive ({post.get(str(best), np.nan):+.0f} pp, horizon {TRACK_HORIZON} months)",
+    return finish(fig, ax, outdir, CHARTS[2], f"After the break {name(c.best_post).lower()} adds the most "
+                  f"value over seasonal naive ({num(c.best_post_fva, '+.0f')} pp, horizon {TRACK_HORIZON} months)",
                   "Forecast method", "FVA vs seasonal naive (percentage points)", {"loc": "best"})
 
 
@@ -239,12 +242,12 @@ def chart_tracking(tables, outdir):
         if len(d):
             ax.plot(d.target_month, d.value, color=COLOR[series], label=LABEL[series], **st)
     top = ax.get_ylim()[1] * 1.2
-    mark_break(ax, c.track_break_month, c.track_detected_at, top)
+    mark_break(ax, c.track_break_month, c.track_detected_at, top, c.onset)
     ax.set_ylim(0, top * 1.02)
     return finish(fig, ax, outdir, CHARTS[3], f"{TRACK_CUSTOMER}, family {c.track_family}, {TRACK_HORIZON} "
                   f"months ahead: after the break the raw customer forecast runs "
-                  f"{pct(tracking_bias(t, 'customer_raw'))} vs actual, bias-corrected "
-                  f"{pct(tracking_bias(t, 'customer_bias_corrected'))}",
+                  f"{pct(tracking_bias(t, 'customer_raw', c.onset))} vs actual, bias-corrected "
+                  f"{pct(tracking_bias(t, 'customer_bias_corrected', c.onset))}",
                   f"Target month (forecast made {TRACK_HORIZON} months earlier)", "Units / month",
                   {"loc": "upper left", "ncol": 3, "handlelength": 2.5, "fontsize": 9})
 
@@ -269,7 +272,7 @@ def place_labels(fig, ax, d):
 
 
 def chart_stability(tables, outdir):
-    s, st = tables["summary"], tables["stability"]
+    s, st, c = tables["summary"], tables["stability"], tables["context"].iloc[0]
     d = pd.DataFrame({"mase": s[(s.period == "all") & (s.horizon == TRACK_HORIZON)].set_index("method").mase,
                       "stability": st[st.period == "all"].set_index("method").stability}).dropna()
     fig, ax = plt.subplots(figsize=(7.5, 5))
@@ -281,9 +284,8 @@ def chart_stability(tables, outdir):
         ax.scatter(r.mase, r.stability, s=70, color=COLOR.get(str(m), INK2), edgecolor=SURFACE,
                    linewidth=2, zorder=3)
     place_labels(fig, ax, d)
-    calm = d.drop("seasonal_naive", errors="ignore").stability.idxmin()
     return finish(fig, ax, outdir, CHARTS[4],
-                  f"Apart from seasonal naive, {name(calm).lower()} revises least; lower-left is better",
+                  f"Apart from seasonal naive, {name(c.calm).lower()} revises least; lower-left is better",
                   f"MASE at {TRACK_HORIZON}-month horizon (lower = more accurate)",
                   "Mean revision between origins (share of mean demand)", loc="left")
 
@@ -312,22 +314,18 @@ def write_report(tables, outdir: str | Path = "outputs"):
     tables["summary"].to_csv(out / "summary_metrics.csv", index=False)
     s, plan, alerts, c = tables["summary"], tables["planner"], tables["alerts"], tables["context"].iloc[0]
     bc = tables["by_customer"][tables["by_customer"].period == "all"]
-    raw = bc[bc.method == "customer_raw"]
-    worst = raw.loc[raw.bias.abs().idxmax()]
-    worst_cor = bc[(bc.method == "customer_bias_corrected") & (bc.customer == worst.customer)
-                   & (bc.horizon == worst.horizon)].bias
-    worst_abs = raw.groupby("customer").bias.apply(lambda b: b.abs().max())
+    worst_cor = bc[(bc.method == "customer_bias_corrected") & (bc.customer == c.worst_customer)
+                   & (bc.horizon == c.worst_horizon)].bias
+    worst_abs = bc[bc.method == "customer_raw"].groupby("customer").bias.apply(lambda b: b.abs().max())
     trusted = sorted(worst_abs[worst_abs <= 0.10].index)
     bias_tab = (bc[bc.method.isin(CUSTOMER_METHODS)]
                 .assign(col=lambda d: d.method.map(dict(zip(CUSTOMER_METHODS, ("raw", "corrected"), strict=True)))
                         + " h" + d.horizon.astype(str), pct=lambda d: 100 * d.bias)
                 .pivot(index="customer", columns="col", values="pct"))
     bias_tab = bias_tab[sorted(bias_tab.columns, key=lambda k: (k[0] == "c", k))].reset_index()
-    fv = s[s.method != "seasonal_naive"].pivot(index=["horizon", "method"], columns="period",
-                                               values="fva_vs_naive")
+    fv = s[s.method != "seasonal_naive"].pivot(index=["horizon", "method"], columns="period", values="fva_vs_naive")
     fv3 = fv.loc[TRACK_HORIZON]
     fv_post = fv3["post"] if "post" in fv3 else pd.Series(dtype=float)
-    best = name(fv_post.idxmax() if fv_post.notna().any() else "blend")
     base_pre = fv3["pre"].get("stat_baseline", np.nan) if "pre" in fv3 else np.nan
     base_post = fv_post.get("stat_baseline", np.nan)
     baseline_note = (f"stat baseline {base_pre:+.0f} pp before the break and {base_post:+.0f} pp after"
@@ -338,14 +336,16 @@ def write_report(tables, outdir: str | Path = "outputs"):
                  "confirmed order book doing the work, not a model." if blend_h1 > 60 else "")
     mase = s[(s.horizon == TRACK_HORIZON) & (s.period == "all")].set_index("method").mase
     stab = tables["stability"][tables["stability"].period == "all"].set_index("method").stability
-    calm, jumpy = stab.drop("seasonal_naive", errors="ignore").idxmin(), stab.idxmax()
-    missed = ", ".join(sorted(alerts.loc[alerts.break_detected_at_origin.isna(), "family"]))
+    missed = ", ".join(sorted(alerts.family[alerts.break_detected_at_origin.isna() & alerts.reason.ne("new_family")]))
     sources = plan.drop_duplicates("family").recommended_source.value_counts()
-    alerts_md = alerts.rename(columns={"break_detected_at_origin": "detected_at_origin"})
+    alerts_md = alerts.drop(columns="break_month").rename(columns={"break_detected_at_origin": "detected_at_origin"})
+    alert_note = (f"the alert fired at origin {c.total_detected_at:.0f}, {c.total_months_after_onset:.0f} months "
+                  f"after the onset at month {c.onset}" if pd.notna(c.total_detected_at)
+                  else f"no break alert fired (onset at month {c.onset})")
     for col in ("detected_at_origin", "months_after_onset", "pre_break_level", "post_break_level"):
         alerts_md[col] = alerts_md[col].round().astype("Int64")
     img = lambda n: f"![{n}](charts/{n}.png)"  # noqa: E731
-    track = lambda m: pct(tracking_bias(tables["tracking"], m))  # noqa: E731
+    track = lambda m: pct(tracking_bias(tables["tracking"], m, c.onset))  # noqa: E731
     text = f"""# Forecast governance report
 
 ## 1. What this is
@@ -354,7 +354,7 @@ All data in this report is synthetic, generated by code in this repository with 
 
 ## 2. Which customer forecasts to trust
 
-{worst.customer}'s own forecast is the least trustworthy ({pct(worst.bias)} bias at {worst.horizon} months, {pct(worst_cor.iloc[0] if len(worst_cor) else np.nan)} after bias correction); {(", ".join(trusted) + " stay") if trusted else "no customer stays"} within 10% at every horizon.
+{c.worst_customer}'s own forecast is the least trustworthy ({pct(c.worst_bias)} bias at {c.worst_horizon} months, {pct(worst_cor.iloc[0] if len(worst_cor) else np.nan)} after bias correction); {(", ".join(trusted) + " stay") if trusted else "no customer stays"} within 10% at every horizon.
 
 {img("customer_bias_by_horizon")}
 
@@ -364,7 +364,7 @@ Bias in percent of actual demand (positive = customer over-forecasts), all origi
 
 ## 3. What happened at the break
 
-Total demand stepped from {c.total_pre_level:,.0f} to {c.total_post_level:,.0f} units a month and the alert fired at origin {c.total_detected_at:.0f}, {c.total_months_after_onset:.0f} months after the onset at month {ONSET}.
+Total demand stepped from {c.total_pre_level:,.0f} to {c.total_post_level:,.0f} units a month and {alert_note}.
 
 {img("total_demand_and_break")}
 
@@ -378,7 +378,7 @@ Families never detected: {missed or "none"}.
 
 ## 4. Which forecast source to use where
 
-After the break {best.lower()} adds {fv_post.max():+.0f} pp over seasonal naive at {TRACK_HORIZON} months ({baseline_note}), and {int(plan.attention_flag.sum())} of {len(plan)} planner rows need attention.{book_note}
+After the break {name(c.best_post).lower()} adds {num(c.best_post_fva, "+.0f")} pp over seasonal naive at {TRACK_HORIZON} months ({baseline_note}), and {int(plan.attention_flag.sum())} of {len(plan)} planner rows need attention.{book_note}
 
 {img("fva_by_method")}
 
@@ -388,7 +388,7 @@ Recommended source by family at origin {plan.origin_month.iloc[0]}: {", ".join(f
 
 ## 5. Stability
 
-Apart from seasonal naive ({stab.get("seasonal_naive", np.nan):.2f}; it repeats last year's actual, so it can hardly revise), {name(calm).lower()} revises least ({stab[calm]:.2f} of mean demand per revision, MASE {mase.get(str(calm), np.nan):.2f}) and {name(jumpy).lower()} most ({stab[jumpy]:.2f}, MASE {mase.get(str(jumpy), np.nan):.2f}).
+Apart from seasonal naive ({stab.get("seasonal_naive", np.nan):.2f}; it repeats last year's actual, so it can hardly revise), {name(c.calm).lower()} revises least ({stab[c.calm]:.2f} of mean demand per revision, MASE {mase.get(str(c.calm), np.nan):.2f}) and {name(c.jumpy).lower()} most ({stab[c.jumpy]:.2f}, MASE {mase.get(str(c.jumpy), np.nan):.2f}).
 
 {img("stability_vs_accuracy")}
 
@@ -416,8 +416,8 @@ A forecast is not ready for a planner until it reports the items below; this rep
     return out / "governance_report.md"
 
 
-def build_all(frames, forecasts, choices, alerts, outdir: str | Path = "outputs"):
-    tables = build_tables(frames, forecasts, choices, alerts)
+def build_all(frames, forecasts, choices, alerts, outdir: str | Path = "outputs", onset=breaks.ONSET):
+    tables = build_tables(frames, forecasts, choices, alerts, onset)
     make_charts(tables, outdir)
     tables["planner"].to_csv(Path(outdir) / "planner_table.csv", index=False)
     write_report(tables, outdir)

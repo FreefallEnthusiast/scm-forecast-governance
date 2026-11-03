@@ -119,3 +119,24 @@ def test_fva_chart_with_pre_and_post_origins(tmp_path):
     with plt.rc_context(report.RC):
         path = report.chart_fva(tables, tmp_path)
     assert path.exists()
+
+
+def test_onset_threads_through(tmp_path):
+    """A different step onset moves the alert lag, the pre/post split and the text with it."""
+    params = synth.SynthParams(step_onset=40)
+    frames = synth.generate(params)
+    alerts = breaks.alert_table(frames["actuals"], onset=params.step_onset)
+    det = alerts.dropna(subset=["break_detected_at_origin"])
+    assert (det.months_after_onset == det.break_detected_at_origin - 40).all()
+    origins = range(37, 49)
+    fc = stub_forecasts(frames, origins, horizons=(1, 3))
+    tables = report.build_all(frames, fc, stub_choices(frames["families"].family, origins), alerts,
+                              outdir=tmp_path, onset=params.step_onset)
+    ev = metrics.evaluate(fc, frames["actuals"], break_month=40)
+    assert set(ev.loc[ev.origin_month < 40, "period"]) == {"pre"}
+    assert set(ev.loc[ev.origin_month >= 40, "period"]) == {"post"}
+    s = tables["summary"]
+    assert {"pre", "post"} <= set(s.period)
+    pre_n = s[(s.period == "pre") & (s.method == "blend") & (s.horizon == 1)].n.iloc[0]
+    assert pre_n == len(ev[(ev.period == "pre") & (ev.method == "blend") & (ev.horizon == 1)])
+    assert "onset at month 40" in (tmp_path / "governance_report.md").read_text()

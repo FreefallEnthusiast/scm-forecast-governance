@@ -10,7 +10,6 @@ import shutil
 import time
 from pathlib import Path
 
-
 from fgov import breaks, forecast, report, synth
 
 
@@ -37,14 +36,15 @@ def main(argv=None):
         print(f"{label:<28} {now - last:6.1f} s")
         last = now
 
-    frames = synth.generate(synth.SynthParams())
+    params = synth.SynthParams()
+    frames = synth.generate(params)
     synth.write_outputs(frames, str(out))
     step("synthetic panel")
-    alerts = breaks.alert_table(frames["actuals"])
+    alerts = breaks.alert_table(frames["actuals"], onset=params.step_onset)
     step("break alerts")
     forecasts, choices = forecast.run_all(frames, alerts, origins=range(args.origins_from, 61))
     step("candidate forecasts")
-    report.build_all(frames, forecasts, choices, alerts, outdir=out)
+    report.build_all(frames, forecasts, choices, alerts, onset=params.step_onset, outdir=out)
     step("tables, charts, report")
     print(f"{'total':<28} {time.perf_counter() - start:6.1f} s\n")
     for f in sorted(p for p in out.rglob("*") if p.is_file() and p.name != ".gitkeep"):

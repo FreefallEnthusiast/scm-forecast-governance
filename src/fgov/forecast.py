@@ -17,8 +17,8 @@ from statsforecast.models import TSB, AutoETS
 from statsforecast.utils import ConformalIntervals
 
 from fgov import breaks, metrics
+from fgov.metrics import KEYS
 
-KEYS = ["customer", "family"]
 COLS = ["origin_month", "target_month", "horizon", "customer", "family",
         "method", "forecast", "lo80", "hi80"]
 CANDIDATES = ["stat_baseline", "customer_bias_corrected", "order_book"]
@@ -129,7 +129,7 @@ def customer_bias_corrected(customer_forecasts, actuals, origins, horizons, last
     raw = customer_raw(customer_forecasts, origins, horizons, last_month)
     ratio = _trailing_ratios(customer_forecasts, actuals, origins, horizons, "customer_forecast")
     d = raw.merge(ratio, on=["origin_month", "horizon", "customer"], how="left")
-    d["forecast"] = d["forecast"] / d["bias_ratio"].fillna(1.0)
+    d["forecast"] = d["forecast"] / d["bias_ratio"].where(d["bias_ratio"] > 0).fillna(1.0)
     return _finish(d.drop(columns=["lo80", "hi80"]), "customer_bias_corrected")
 
 
