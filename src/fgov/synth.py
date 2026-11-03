@@ -72,7 +72,8 @@ class SynthParams:
     book_horizons: tuple = (1, 2, 3, 4, 5, 6)
     fill_ratio: tuple = (0.85, 0.74, 0.63, 0.52, 0.41, 0.30)  # normal times
     upcycle_fill_boost: float = 0.10     # added to fill ratio for targets >= step onset
-    fill_noise_sigma: float = 0.10       # lognormal noise on the fill ratio
+    fill_noise_sigma: tuple = (0.10, 0.18, 0.26, 0.34, 0.42, 0.50)  # lognormal noise on the fill ratio, by months ahead
+    book_visibility: tuple = (0.95, 0.90, 0.80, 0.70, 0.60, 0.50)   # P(a lumpy order is on the book yet), by months ahead
 
 
 def family_table(p: SynthParams) -> pd.DataFrame:
@@ -145,15 +146,22 @@ def customer_forecasts(p, rng, fam, signal, months):
 
 
 def order_book(p, rng, fam, actual, months):
-    """Confirmed quantity on the book 1..6 months ahead; never exceeds the eventual actual."""
+    """Confirmed quantity on the book 1..6 months ahead; never exceeds the eventual actual.
+
+    Far out, the confirmed share of a month is both lower and much more
+    uncertain, and a lumpy order may not have been placed yet at all.
+    """
     n_c, n_f = len(p.customers), len(fam)
+    is_int = fam["is_intermittent"].to_numpy()[None, :, None]
     parts = []
     for hi, h in enumerate(p.book_horizons):
         t = months[months - h >= 1]
         shape = (n_c, n_f, len(t))
+        sig = p.fill_noise_sigma[hi]
         ratio = p.fill_ratio[hi] + p.upcycle_fill_boost * (t >= p.step_onset)
-        ratio = ratio[None, None, :] * rng.lognormal(0.0, p.fill_noise_sigma, shape)
-        qty = np.floor(actual[:, :, t - 1] * np.clip(ratio, 0.0, 1.0))
+        ratio = ratio[None, None, :] * np.exp(sig * rng.standard_normal(shape) - 0.5 * sig**2)
+        placed = np.where(is_int, rng.random(shape) < p.book_visibility[hi], 1.0)
+        qty = np.floor(actual[:, :, t - 1] * np.clip(ratio, 0.0, 1.0) * placed)
         parts.append(long_table(p, fam, t, h, qty, "confirmed_qty", "as_of_month"))
     return pd.concat(parts, ignore_index=True)
 

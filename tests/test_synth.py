@@ -12,7 +12,7 @@ def frames():
 
 
 def _with_actuals(df, frames, month_col):
-    a = frames["actuals"][["customer", "family", "month", "actual"]]
+    a = frames["actuals"][["customer", "family", "month", "actual", "is_intermittent"]]
     m = df.merge(a, left_on=["customer", "family", month_col], right_on=["customer", "family", "month"])
     return m.dropna(subset=["actual"])
 
@@ -129,7 +129,10 @@ def test_order_book_fill_rises_as_horizon_shortens(frames):
         g = sub.groupby("h")[["confirmed_qty", "actual"]].sum()
         fill = (g.confirmed_qty / g.actual).sort_index()
         assert np.all(np.diff(fill.to_numpy()) < 0), fill
-    pre = m[m.target_month < P.step_onset].groupby("h")[["confirmed_qty", "actual"]].sum()
+    # The fill parameter applies directly to smooth families; lumpy orders may
+    # not be on the book yet far out, which lowers the pooled ratio.
+    smooth = m[(m.target_month < P.step_onset) & ~m.is_intermittent]
+    pre = smooth.groupby("h")[["confirmed_qty", "actual"]].sum()
     pre_fill = pre.confirmed_qty / pre.actual
     assert pre_fill[6] == pytest.approx(0.30, abs=0.05)
     assert pre_fill[1] == pytest.approx(0.85, abs=0.05)

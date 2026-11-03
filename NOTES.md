@@ -48,3 +48,25 @@ Judgement calls and open questions for the owner to review.
 
 - **Tools.** `ruff check .` (lint, bug patterns, naming, McCabe complexity 10, max 50 statements and 12 branches per function) and `pyright src` (static typing as a language server would report it) must both be clean before a commit. Config lives in `pyproject.toml`. No AST-rewriting or graph tooling: the package is seven files with a fixed one-way layering (synth, then forecast/metrics/breaks, then report, then run) and the lead reads every module.
 - **Synth refactor.** `generate` was over the statement limit; the customer-forecast and order-book blocks became `customer_forecasts` and `order_book` with a shared `long_table` helper. Random draws happen in the same order, and all four output frames hash identically to before.
+
+### Candidate forecasts (`src/fgov/forecast.py`)
+
+- **Warm-up origins.** Every method also runs for the 12 origins before the first requested one (13..24 for the full run) so empirical intervals and the blend have history at origin 25; those rows are dropped from the output.
+- **Stat baseline groups at each origin.** Under 13 points: mean of available history with empirical intervals. 13 to 24 points: TSB (alpha_d = alpha_p = 0.2) or AutoETS(season_length=12) without conformal intervals. 25 or more: conformal with n_windows=2, h=6. One `StatsForecast.forecast` call per group per origin; `n_jobs=4` brings the 36 origins from 116 s to 38 s. AutoETS is unrestricted.
+- **Empirical intervals** use residuals from the last 12 origins whose targets were realised by the origin, pooled per method x horizon x family. Where all residuals share a sign the interval is widened to contain the point forecast, then clipped at zero. Conformal intervals are kept where present.
+- **Blend** scores stat baseline, bias-corrected customer, order book and their row-wise average by pooled scaled error over the previous 12 origins (6 when `history_unreliable`), all horizons pooled; fewer than 3 evaluable origins picks "average"; ties go to the first in that order. Ratios for bias correction and order-book fill are per customer, pooled over families; zero or NaN falls back to 1.0.
+- **Rows.** Customer and order-book methods have 100 more rows than the history-based ones: the new families at origin 36 have forecasts for target 37 but no actual history.
+- **Seasonal naive MASE is about 1.5, not 1.** Out of sample its errors are |y_t - y_{t-12}| like the in-sample scale, but pre-break origins forecast into the step and intermittent series are lumpier out of sample. In-sample equality is what the metrics test checks.
+
+### Order book made honest (lead session, after the first forecast run)
+
+- The first run showed the order-book method 66 to 74% better than seasonal naive at every horizon, above the spec's implausibility line. Cause: the generator revealed each month's demand six months ahead with 10% noise and revealed lumpy-order timing perfectly. Changed to horizon-dependent noise (lognormal sigma 0.10 at one month to 0.50 at six) and, for intermittent families, a probability that a lumpy order is not on the book yet (95% visible at one month, 50% at six). The fill test now measures the fill parameter on smooth families, where it applies directly.
+- After the change the order book is strong one month out (FVA about 70%, where 88% of demand is already confirmed, which is real), modest at three months (10 to 20%) and worse than naive at six. The blend now picks between sources (average 239, order book 144, bias-corrected customer 48, stat baseline 1 of 432 choices) instead of always taking the book. Blend FVA at one month stays above 60%; that is the confirmed order book doing the work and the report says so.
+- Stat baseline 80% coverage is 0.56 to 0.58: conformal with two windows under-covers by construction, and pre-break origins 31..36 forecast into the step. Left as found; it is part of the history-unreliable story.
+
+### Report and runner (`src/fgov/report.py`, `src/fgov/run.py`)
+
+- **Planner origin** is the latest origin with horizon-1 blend rows (59 in the full run), target 60; the CSV carries `origin_month` and `target_month`. Rows come from the full customer x family grid so the table always has 60 rows.
+- **Attention triggers:** trailing customer bias beyond 20%, recommended source different from the previous origin's choice, or the family's break detected at exactly this origin. `attention_reason` lists which fired.
+- **Charts.** One colour per method across all charts; the pre/post split uses two greys. The break line is the PELT break month at the detection origin (36); the shaded lag runs from onset to detection. The tracking family is the long-lead family with the largest step factor (F04).
+- **Runner** deletes only the files it writes, not the output folder.
