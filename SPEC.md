@@ -1,3 +1,5 @@
+> This is the build specification the implementation was produced against; the owner wrote it and reviewed the result.
+
 # Forecast governance layer for a component supplier — build spec
 
 ## Purpose

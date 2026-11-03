@@ -149,3 +149,7 @@ Section 3 now states the stat baseline's achieved 80% coverage at 3 months pre- 
 ### 4. Committed outputs
 
 `outputs/charts/*.png`, `outputs/governance_report.md`, `outputs/planner_table.csv` and `outputs/summary_metrics.csv` are committed so the README renders on GitHub without a run; the data files stay ignored. The README links charts as `outputs/charts/...` from the repo root; the report links them as `charts/...` and the docs as `../docs/...` from `outputs/`, so both resolve where each file lives. Rerunning `python -m fgov.run` rewrites the committed files; a changed number shows up as a diff.
+
+### 5. README tidy
+
+Opening paragraph split in three with the synthetic-data sentence first; a fourth headline bullet on interval coverage; a short section on reading the planner table; and a line at the top of `SPEC.md` stating that the owner wrote it and reviewed the result.
