@@ -356,6 +356,12 @@ def write_report(tables, outdir: str | Path = "outputs"):
                   else f"no break alert fired (onset at month {c.onset})")
     for col in ("detected_at_origin", "months_after_onset", "pre_break_level", "post_break_level"):
         alerts_md[col] = alerts_md[col].round().astype("Int64")
+    cov = lambda m, p: s[(s.horizon == TRACK_HORIZON) & (s.period == p) & (s.method == m)].coverage80.max()  # noqa: E731
+    cov_note = (f"The stat baseline's 80% interval covered the actual {num(cov('stat_baseline', 'pre'), '.0%')} of the "
+                f"time before the break and {num(cov('stat_baseline', 'post'), '.0%')} after, against "
+                f"{num(cov('blend', 'pre'), '.0%')} and {num(cov('blend', 'post'), '.0%')} for the blend; intervals "
+                f"built on stale history are too narrow once the level has moved, so a planner reading them as "
+                f"80% bands would be surprised far more often than one time in five.")
     img = lambda n: f"![{n}](charts/{n}.png)"  # noqa: E731
     track = lambda m: pct(tracking_bias(tables["tracking"], m, c.onset))  # noqa: E731
     text = f"""# Forecast governance report
@@ -383,6 +389,8 @@ Total demand stepped from {c.total_pre_level:,.0f} to {c.total_post_level:,.0f} 
 For {TRACK_CUSTOMER} on {c.track_family} (the long-lead family with the largest step, {c.track_step_factor:.2f}x), the raw customer forecast ran {track("customer_raw")} against actuals after the break at {TRACK_HORIZON} months ahead, the bias-corrected forecast {track("customer_bias_corrected")} and the stat baseline {track("stat_baseline")}.
 
 {img("tracking_c5")}
+
+{cov_note}
 
 Families never detected: {missed or "none"}.
 

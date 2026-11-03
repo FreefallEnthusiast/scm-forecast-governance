@@ -141,3 +141,7 @@ On smooth families the three sources' errors are uncorrelated or negatively corr
 By family type at 3 months (with the book): on intermittent families the blend routes to the order book at every origin and adds +73 pre / +69 post, where the bias-corrected customer forecast adds only +12 / +8. On smooth families the blend averages and adds +55 / +56, above the best single source (+32 / +43). Without the book the intermittent figure falls to +11 / +10 and the smooth figure to +43 / +52.
 
 **Finding.** The +60 pp at 3 months is real and not leaked, but about two thirds of it is the order book: lumpy orders are mostly on the book three months out (80% visibility in the generator), so the blend hands intermittent families to it. The rest is genuine averaging gain on smooth families, where the inputs' errors are not aligned. At 6 months the order book hurts and the blend without it is as good or better. The report's section 4 now states the decomposition with generated numbers, and the README headline quotes the honest version.
+
+### 3. Interval coverage in the report
+
+Section 3 now states the stat baseline's achieved 80% coverage at 3 months pre- and post-break against the blend's, with one sentence on what the gap means. The numbers are generated from the summary table at every run.
