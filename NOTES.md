@@ -43,3 +43,8 @@ Judgement calls and open questions for the owner to review.
 - **Flags are sticky.** The raw scan can lose a break at later origins (F09 after origin 43); `history_unreliable` never clears once set, as specified. New families are unreliable from launch (month 37) for 12 months by rule.
 - **Levels.** Pre-break level is the mean over months 25..36; post-break level runs from the detected break month to month 60, so it includes the ramp. TOTAL counts new-family NaN as zero.
 - **Other seeds (information only).** Across seeds 1..8 the total is detected at origins 39..42 and only 4 to 6 established families within 4 origins. The default seed is a good case and the family-count test is seed-specific.
+
+### Quality gate (lead session)
+
+- **Tools.** `ruff check .` (lint, bug patterns, naming, McCabe complexity 10, max 50 statements and 12 branches per function) and `pyright src` (static typing as a language server would report it) must both be clean before a commit. Config lives in `pyproject.toml`. No AST-rewriting or graph tooling: the package is seven files with a fixed one-way layering (synth, then forecast/metrics/breaks, then report, then run) and the lead reads every module.
+- **Synth refactor.** `generate` was over the statement limit; the customer-forecast and order-book blocks became `customer_forecasts` and `order_book` with a shared `long_table` helper. Random draws happen in the same order, and all four output frames hash identically to before.

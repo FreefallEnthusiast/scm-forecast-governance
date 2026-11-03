@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "ruff"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fgov"]
@@ -25,3 +25,20 @@ packages = ["src/fgov"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+# Quality gate: `ruff check .` must be clean. Complexity and size limits are
+# deliberate; the spec caps the package at about 1,500 lines.
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "C90", "SIM", "UP", "N", "PL"]
+ignore = ["E501", "PLR0913", "PLR0917", "PLR2004"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-statements = 50
+max-branches = 12

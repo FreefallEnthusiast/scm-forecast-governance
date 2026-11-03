@@ -112,7 +112,54 @@ def step_profile(p, months, factor, long_lead):
     return 1.0 + (factor - 1.0) * progress
 
 
-def generate(p: SynthParams = SynthParams()) -> dict:
+def long_table(p, fam, t, h, values, value_name, origin_name):
+    """Flatten a (customer, family, target) cube into a long frame with an origin column."""
+    n_c, n_f = len(p.customers), len(fam)
+    c, f, k = np.meshgrid(np.arange(n_c), np.arange(n_f), np.arange(len(t)), indexing="ij")
+    return pd.DataFrame({
+        origin_name: t[k.ravel()] - h,
+        "target_month": t[k.ravel()],
+        "customer": np.array(p.customers)[c.ravel()],
+        "family": fam["family"].to_numpy()[f.ravel()],
+        value_name: values.ravel(),
+    })
+
+
+def customer_forecasts(p, rng, fam, signal, months):
+    """Each customer's forecast of every target made 1, 3 and 6 months earlier."""
+    n_c, n_f = len(p.customers), len(fam)
+    parts = []
+    for hi, h in enumerate(p.horizons):
+        t = months[months - h >= 1]
+        bias = np.array([b[hi] for b in p.customer_bias])[:, None, None]
+        sig = np.array([s[hi] for s in p.customer_noise])[:, None, None]
+        shape = (n_c, n_f, len(t))
+        noise = np.exp(sig * rng.standard_normal(shape) - 0.5 * sig**2)
+        panic = np.ones(shape)
+        c5 = p.customers.index(p.upcycle_customer)
+        panic[c5][:, t >= p.step_onset] = p.upcycle_bias[hi]
+        fc = np.round(signal[:, :, t - 1] * bias * noise * panic)
+        parts.append(long_table(p, fam, t, h, fc, "customer_forecast", "origin_month").assign(horizon=h))
+    cols = ["origin_month", "target_month", "horizon", "customer", "family", "customer_forecast"]
+    return pd.concat(parts, ignore_index=True)[cols]
+
+
+def order_book(p, rng, fam, actual, months):
+    """Confirmed quantity on the book 1..6 months ahead; never exceeds the eventual actual."""
+    n_c, n_f = len(p.customers), len(fam)
+    parts = []
+    for hi, h in enumerate(p.book_horizons):
+        t = months[months - h >= 1]
+        shape = (n_c, n_f, len(t))
+        ratio = p.fill_ratio[hi] + p.upcycle_fill_boost * (t >= p.step_onset)
+        ratio = ratio[None, None, :] * rng.lognormal(0.0, p.fill_noise_sigma, shape)
+        qty = np.floor(actual[:, :, t - 1] * np.clip(ratio, 0.0, 1.0))
+        parts.append(long_table(p, fam, t, h, qty, "confirmed_qty", "as_of_month"))
+    return pd.concat(parts, ignore_index=True)
+
+
+def generate(p: SynthParams | None = None) -> dict:
+    p = p or SynthParams()
     rng = np.random.default_rng(p.seed)
     fam = family_table(p)
     n_c, n_f, n_m = len(p.customers), len(fam), p.n_history + p.n_holdout
@@ -162,47 +209,8 @@ def generate(p: SynthParams = SynthParams()) -> dict:
     # Customer forecasts. The customer sees the realised demand for smooth and
     # new families, and only the expected level for intermittent ones.
     signal = np.where(is_int[None, :, None], level, actual)
-    fc_parts = []
-    for hi, h in enumerate(p.horizons):
-        t = months[months - h >= 1]
-        ti = t - 1
-        bias = np.array([b[hi] for b in p.customer_bias])[:, None, None]
-        sig = np.array([s[hi] for s in p.customer_noise])[:, None, None]
-        shape = (n_c, n_f, len(t))
-        noise = np.exp(sig * rng.standard_normal(shape) - 0.5 * sig**2)
-        panic = np.ones(shape)
-        c5 = p.customers.index(p.upcycle_customer)
-        panic[c5][:, t >= p.step_onset] = p.upcycle_bias[hi]
-        fc = np.round(signal[:, :, ti] * bias * noise * panic)
-        c, f, k = np.meshgrid(np.arange(n_c), np.arange(n_f), np.arange(len(t)), indexing="ij")
-        fc_parts.append(pd.DataFrame({
-            "origin_month": t[k.ravel()] - h,
-            "target_month": t[k.ravel()],
-            "horizon": h,
-            "customer": np.array(p.customers)[c.ravel()],
-            "family": fam["family"].to_numpy()[f.ravel()],
-            "customer_forecast": fc.ravel(),
-        }))
-    forecasts = pd.concat(fc_parts, ignore_index=True)
-
-    # Order book: confirmed quantity never exceeds the eventual actual.
-    ob_parts = []
-    for hi, h in enumerate(p.book_horizons):
-        t = months[months - h >= 1]
-        ti = t - 1
-        shape = (n_c, n_f, len(t))
-        ratio = p.fill_ratio[hi] + p.upcycle_fill_boost * (t >= p.step_onset)
-        ratio = ratio[None, None, :] * rng.lognormal(0.0, p.fill_noise_sigma, shape)
-        qty = np.floor(actual[:, :, ti] * np.clip(ratio, 0.0, 1.0))
-        c, f, k = np.meshgrid(np.arange(n_c), np.arange(n_f), np.arange(len(t)), indexing="ij")
-        ob_parts.append(pd.DataFrame({
-            "as_of_month": t[k.ravel()] - h,
-            "target_month": t[k.ravel()],
-            "customer": np.array(p.customers)[c.ravel()],
-            "family": fam["family"].to_numpy()[f.ravel()],
-            "confirmed_qty": qty.ravel(),
-        }))
-    book = pd.concat(ob_parts, ignore_index=True)
+    forecasts = customer_forecasts(p, rng, fam, signal, months)
+    book = order_book(p, rng, fam, actual, months)
 
     sort = ["customer", "family"]
     return {

@@ -102,8 +102,8 @@ def alert_table(actuals: pd.DataFrame, onset: int = ONSET, origins=None,
     first = first_detection(scanned, onset)
     series = {**monthly_totals(actuals, "total"), **monthly_totals(actuals, "family")}
     rows = []
-    for name, s in series.items():
-        s = s[s.index <= origins[-1]]
+    for name, full in series.items():
+        s = full[full.index <= origins[-1]]
         pre = s[(s.index >= onset - 12) & (s.index < onset)].mean()
         if name in new:
             launch = int(s.dropna().index.min())
