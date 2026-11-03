@@ -238,7 +238,7 @@ def blend(candidate_rows, actuals, alerts, origins, recent=12, unreliable_recent
 
 
 def run_all(frames, alerts, origins=range(25, 61), horizons=(1, 3, 6), warmup=12, n_jobs=4,
-            timings=None):
+            timings=None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """All six methods for `origins`. Methods are also run for `warmup` origins
     before the first, only so empirical intervals and the blend have a trailing
     history at the first origin; those rows are dropped from the output.

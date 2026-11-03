@@ -10,15 +10,16 @@ import shutil
 import time
 from pathlib import Path
 
-from fgov import breaks, report, synth
-from fgov.forecast import run_all
+
+from fgov import breaks, forecast, report, synth
+
 
 GENERATED = ("actuals.parquet", "customer_forecasts.csv", "order_book.csv", "families.csv",
              "planner_table.csv", "summary_metrics.csv", "governance_report.md")
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument("--outdir", default="outputs")
     parser.add_argument("--origins-from", type=int, default=25,
                         help="first backtest origin (origins run to 60); raise it for a quick run")
@@ -37,11 +38,11 @@ def main(argv=None):
         last = now
 
     frames = synth.generate(synth.SynthParams())
-    synth.write_outputs(frames, out)
+    synth.write_outputs(frames, str(out))
     step("synthetic panel")
     alerts = breaks.alert_table(frames["actuals"])
     step("break alerts")
-    forecasts, choices = run_all(frames, alerts, origins=range(args.origins_from, 61))
+    forecasts, choices = forecast.run_all(frames, alerts, origins=range(args.origins_from, 61))
     step("candidate forecasts")
     report.build_all(frames, forecasts, choices, alerts, outdir=out)
     step("tables, charts, report")
