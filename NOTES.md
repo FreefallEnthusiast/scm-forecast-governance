@@ -21,7 +21,7 @@ Judgement calls and open questions for the owner to review.
 - **Test robustness.** All tests pass for the default seed. Across seeds 0-29, the pre-break bias test fails for 3 seeds (10, 15, 23), always because realised intermittent demand ran well above or below its expectation and moved a pooled customer ratio by more than the tolerance (e.g. C2 at h=6 = 1.21). The tolerances were not widened to cover them.
 - **Tooling.** The `pytest` first on PATH here (`/root/.local/bin/pytest`) is an isolated tool install without numpy; use `python -m pytest`.
 
-### Review of the synthetic panel (lead session)
+### Review of the synthetic panel
 
 - **Intermittent families dominate month-to-month noise in the total.** Their combined monthly total swings roughly 3k to 13k against a smooth-family total of about 13k pre-step, so the total series has a coefficient of variation near 13% before the step. The step to about 37k is still unmistakable, but per-family break detection on F07-F10 will lag and may miss F08 (factor only 1.3). Accepted as the honest lumpy case; phase 4 should report misses rather than tune them away.
 - **Pooled customer bias carries noise from intermittent families.** Post-break (24 months only), C1 reads 0.94 and C4 reads 1.08 overall although both are 1.00 on smooth families; the gap is realised lumpy demand running away from the expected level the customer forecasts against. Within the 20% attention threshold, so accepted. The report should state bias by customer on smooth families as well as overall if the chart looks muddled.
@@ -44,9 +44,9 @@ Judgement calls and open questions for the owner to review.
 - **Levels.** Pre-break level is the mean over months 25..36; post-break level runs from the detected break month to month 60, so it includes the ramp. TOTAL counts new-family NaN as zero.
 - **Other seeds (information only).** Across seeds 1..8 the total is detected at origins 39..42 and only 4 to 6 established families within 4 origins. The default seed is a good case and the family-count test is seed-specific.
 
-### Quality gate (lead session)
+### Quality gate
 
-- **Tools.** `ruff check .` (lint, bug patterns, naming, McCabe complexity 10, max 50 statements and 12 branches per function) and `pyright src` (static typing as a language server would report it) must both be clean before a commit. Config lives in `pyproject.toml`. No AST-rewriting or graph tooling: the package is seven files with a fixed one-way layering (synth, then forecast/metrics/breaks, then report, then run) and the lead reads every module.
+- **Tools.** `ruff check .` (lint, bug patterns, naming, McCabe complexity 10, max 50 statements and 12 branches per function) and `pyright src` (static typing as a language server would report it) must both be clean before a commit. Config lives in `pyproject.toml`. No AST-rewriting or graph tooling: the package is seven files with a fixed one-way layering (synth, then forecast/metrics/breaks, then report, then run) and every module is read in review before it is committed.
 - **Synth refactor.** `generate` was over the statement limit; the customer-forecast and order-book blocks became `customer_forecasts` and `order_book` with a shared `long_table` helper. Random draws happen in the same order, and all four output frames hash identically to before.
 
 ### Candidate forecasts (`src/fgov/forecast.py`)
@@ -58,7 +58,7 @@ Judgement calls and open questions for the owner to review.
 - **Rows.** Customer and order-book methods have 100 more rows than the history-based ones: the new families at origin 36 have forecasts for target 37 but no actual history.
 - **Seasonal naive MASE is about 1.5, not 1.** Out of sample its errors are |y_t - y_{t-12}| like the in-sample scale, but pre-break origins forecast into the step and intermittent series are lumpier out of sample. In-sample equality is what the metrics test checks.
 
-### Order book made honest (lead session, after the first forecast run)
+### Order book made honest (after the first forecast run)
 
 - The first run showed the order-book method 66 to 74% better than seasonal naive at every horizon, above the spec's implausibility line. Cause: the generator revealed each month's demand six months ahead with 10% noise and revealed lumpy-order timing perfectly. Changed to horizon-dependent noise (lognormal sigma 0.10 at one month to 0.50 at six) and, for intermittent families, a probability that a lumpy order is not on the book yet (95% visible at one month, 50% at six). The fill test now measures the fill parameter on smooth families, where it applies directly.
 - After the change the order book is strong one month out (FVA about 70%, where 88% of demand is already confirmed, which is real), modest at three months (10 to 20%) and worse than naive at six. The blend now picks between sources (average 239, order book 144, bias-corrected customer 48, stat baseline 1 of 432 choices) instead of always taking the book. Blend FVA at one month stays above 60%; that is the confirmed order book doing the work and the report says so.
@@ -101,3 +101,9 @@ Twenty seeds (0..19) through the full pipeline; results in `scripts/seed_study_2
 - The customer-bias and value-added findings are stable. The total break is always flagged within four months. Per-family detection within four months never reaches the spec's 10 of 12 on any seed (best is 8 of 10 established plus the 2 new families by rule); the spec's expectation is too optimistic for lumpy families at these step sizes and penalties chosen without hindsight. The default seed, at 7 of 10, is slightly better than the median.
 - The blend's one-month FVA stays above 60% on every seed because the confirmed order book carries it; the three-month figure sits at 55 to 68.
 - Stat baseline interval coverage is 0.55 to 0.60 on every seed: the two-window conformal intervals under-cover by construction, which the report states.
+
+## Owner review round
+
+### 1. Repository scrub
+
+- `PROPOSAL.md` (an internal build plan) is removed from the working tree and purged from history, so the repository reads as a reference implementation. References to it, and process narrative in these notes, are removed. Commit trailers no longer name a model.

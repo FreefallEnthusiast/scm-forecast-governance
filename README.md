@@ -60,7 +60,6 @@ The run regenerates everything in `outputs/` from a fixed seed. It takes 50 to 8
 README.md
 SPEC.md                  build spec
 NOTES.md                 judgement calls and open questions
-PROPOSAL.md              the owner's proposal for this build
 pyproject.toml           dependencies, ruff and pytest config
 src/fgov/
   synth.py               synthetic panel generator, all parameters in one dataclass
