@@ -153,3 +153,7 @@ Section 3 now states the stat baseline's achieved 80% coverage at 3 months pre- 
 ### 5. README tidy
 
 Opening paragraph split in three with the synthetic-data sentence first; a fourth headline bullet on interval coverage; a short section on reading the planner table; and a line at the top of `SPEC.md` stating that the owner wrote it and reviewed the result.
+
+### 6. Chart check
+
+All five titles are now one line (under 90 characters); the "N of M pairs closer to zero" detail moved from the bias chart title into section 2 of the report, and the attention band is a legend entry instead of a title note. The tracking chart's legend moved to the lower right so it no longer sits over the detection-lag band.

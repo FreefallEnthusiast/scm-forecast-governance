@@ -98,6 +98,8 @@ def build_tables(frames, forecasts, choices, alerts, onset=breaks.ONSET):
     # Headlines picked once here so chart titles and report text cannot disagree.
     raw = by_customer[(by_customer.period == "all") & (by_customer.method == "customer_raw")]
     worst = raw.loc[raw.bias.abs().idxmax()]
+    pair = by_customer[by_customer.period == "all"].pivot_table(index=["customer", "horizon"], columns="method", values="bias")
+    closer = (pair["customer_bias_corrected"].abs() <= pair["customer_raw"].abs())
     post = summary[(summary.horizon == TRACK_HORIZON) & (summary.period == "post")
                    & (summary.method != "seasonal_naive")].set_index("method").fva_vs_naive
     st = stab[stab.period == "all"].set_index("method").stability
@@ -108,6 +110,7 @@ def build_tables(frames, forecasts, choices, alerts, onset=breaks.ONSET):
         "track_family": fam, "track_step_factor": long_lead.step_factor.max(),
         "track_detected_at": track.break_detected_at_origin, "track_break_month": track.break_month,
         "worst_customer": worst.customer, "worst_horizon": worst.horizon, "worst_bias": worst.bias,
+        "pairs_closer": int(closer.sum()), "pairs_total": int(len(closer)),
         "best_post": post.idxmax() if post.notna().any() else "blend", "best_post_fva": post.max(),
         "calm": st.drop("seasonal_naive", errors="ignore").idxmin(), "jumpy": st.idxmax()}])
     f, a = forecasts, actuals
@@ -185,8 +188,8 @@ def chart_total(tables, outdir):
                     arrowprops={"arrowstyle": "-", "color": INK2, "lw": 0.8})
     ax.set_ylim(0, top * 1.02)
     ax.set_xlim(1, t.month.max())
-    return finish(fig, ax, outdir, CHARTS[0], f"Total demand rose from {c.total_pre_level / 1000:.1f}k to "
-                  f"{c.total_post_level / 1000:.1f}k units a month; the break was flagged "
+    return finish(fig, ax, outdir, CHARTS[0], f"Total demand stepped from {c.total_pre_level / 1000:.1f}k to "
+                  f"{c.total_post_level / 1000:.1f}k a month; break flagged "
                   f"{num(c.total_months_after_onset, '.0f')} months after onset",
                   "Month", "Total demand (thousand units / month)", {"loc": "upper left"})
 
@@ -198,7 +201,7 @@ def chart_bias(tables, outdir):
     fig, axes = plt.subplots(1, len(horizons), figsize=(11, 4), sharey=True, squeeze=False)
     x = np.arange(len(customers))
     for ax, h in zip(axes[0], horizons, strict=True):
-        ax.axhspan(-20, 20, color=GRID, alpha=0.5, lw=0)
+        ax.axhspan(-20, 20, color=GRID, alpha=0.5, lw=0, label="+/-20% attention band" if h == horizons[0] else None)
         vals = [100 * b[(b.horizon == h) & (b.method == m)].set_index("customer").bias.reindex(customers)
                 for m in CUSTOMER_METHODS]
         paired_bars(ax, x, vals, [COLOR[m] for m in CUSTOMER_METHODS], [LABEL[m] for m in CUSTOMER_METHODS])
@@ -206,13 +209,8 @@ def chart_bias(tables, outdir):
         ax.set_xticks(x, customers)
         ax.set_title(f"{h}-month horizon", fontweight="normal")
         ax.set_xlabel("Customer")
-    raw = b[b.method == "customer_raw"].set_index(["customer", "horizon"]).bias
-    cor = b[b.method == "customer_bias_corrected"].set_index(["customer", "horizon"]).bias
-    closer = cor.abs() <= raw.abs()
-    fig.suptitle(f"{c.worst_customer} is the most biased customer forecast ({pct(c.worst_bias)} at "
-                 f"{c.worst_horizon} months); bias correction moves {closer.sum()} of {len(closer)} "
-                 f"customer-horizon pairs closer to zero\nGrey band: +/-20% attention threshold",
-                 fontweight="bold", fontsize=11)
+    fig.suptitle(f"Customer forecast bias by horizon: {c.worst_customer} is the most biased "
+                 f"({pct(c.worst_bias)} at {c.worst_horizon} months)", fontweight="bold", fontsize=11)
     return finish(fig, axes[0][0], outdir, CHARTS[1], None, "Customer",
                   "Bias (% of actual, + = over-forecast)", {"loc": "upper left"})
 
@@ -246,12 +244,11 @@ def chart_tracking(tables, outdir):
     top = ax.get_ylim()[1] * 1.2
     mark_break(ax, c.track_break_month, c.track_detected_at, top, c.onset)
     ax.set_ylim(0, top * 1.02)
-    return finish(fig, ax, outdir, CHARTS[3], f"{TRACK_CUSTOMER}, family {c.track_family}, {TRACK_HORIZON} "
-                  f"months ahead: after the break the raw customer forecast runs "
-                  f"{pct(tracking_bias(t, 'customer_raw', c.onset))} vs actual, bias-corrected "
-                  f"{pct(tracking_bias(t, 'customer_bias_corrected', c.onset))}",
+    return finish(fig, ax, outdir, CHARTS[3], f"{TRACK_CUSTOMER} on {c.track_family}, {TRACK_HORIZON} months "
+                  f"ahead: after the break raw customer forecast {pct(tracking_bias(t, 'customer_raw', c.onset))}, "
+                  f"bias-corrected {pct(tracking_bias(t, 'customer_bias_corrected', c.onset))}",
                   f"Target month (forecast made {TRACK_HORIZON} months earlier)", "Units / month",
-                  {"loc": "upper left", "ncol": 3, "handlelength": 2.5, "fontsize": 9})
+                  {"loc": "lower right", "ncol": 2, "handlelength": 2.5, "fontsize": 9})
 
 
 def place_labels(fig, ax, d):
@@ -372,7 +369,7 @@ All data in this report is synthetic, generated by code in this repository with 
 
 ## 2. Which customer forecasts to trust
 
-{c.worst_customer}'s own forecast is the least trustworthy ({pct(c.worst_bias)} bias at {c.worst_horizon} months, {pct(worst_cor.iloc[0] if len(worst_cor) else np.nan)} after bias correction); {(", ".join(trusted) + " stay") if trusted else "no customer stays"} within 10% at every horizon.
+{c.worst_customer}'s own forecast is the least trustworthy ({pct(c.worst_bias)} bias at {c.worst_horizon} months, {pct(worst_cor.iloc[0] if len(worst_cor) else np.nan)} after bias correction); {(", ".join(trusted) + " stay") if trusted else "no customer stays"} within 10% at every horizon. Bias correction moves {c.pairs_closer} of {c.pairs_total} customer-horizon pairs closer to zero.
 
 {img("customer_bias_by_horizon")}
 
