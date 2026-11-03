@@ -34,3 +34,12 @@ Judgement calls and open questions for the owner to review.
 - **FVA** is joined on horizon, period and any extra grouping columns; the two reference methods score zero against themselves.
 - **Stability** takes revisions between consecutive available origins for the same target (so a target seen at origins t-6, t-3, t-1 yields two revisions, crossing horizons), scaled by the series' whole-history mean actual, which includes the upcycle level. Reported by method and period only.
 - **Trailing bias window** is target months in (origin - 12, origin] at the given horizon, so only realised months are used.
+
+### Break detection (`src/fgov/breaks.py`)
+
+- **Spec deviation, for the owner.** The spec expects the step detected within 4 origins in at least 10 of 12 families. The honest result on the default seed is 7 of 10 established families plus the 2 new families flagged by rule, so 9 of 12. F08 (step factor only 1.3 under lumpy demand) is never detected; F07 and F10 are 6 and 7 months late; F05 and F09 are right at the limit. The test asserts the honest count of 7 with a comment. The penalty was not tuned on the step; see next point. Options for the owner: accept and say so in the report (recommended, it is the point of the lumpy case), or raise the intermittent step factors in the synth parameters.
+- **Penalty procedure.** PELT penalty 2.0 chosen as the smallest grid value with zero pre-onset false alarms on the total and on at least 5 of the 6 smooth families, scanning origins 24..36 only. No post-step data is used. F01 has one allowed pre-onset false alarm (origin 31, break at month 26).
+- **Earliest possible detection** is two origins after the break month, because PELT with min_size 3 cannot place a break in the last two points. Every detected break lands on month 36 (long-lead families step early and the ramp pulls the change point one month early for the rest).
+- **Flags are sticky.** The raw scan can lose a break at later origins (F09 after origin 43); `history_unreliable` never clears once set, as specified. New families are unreliable from launch (month 37) for 12 months by rule.
+- **Levels.** Pre-break level is the mean over months 25..36; post-break level runs from the detected break month to month 60, so it includes the ramp. TOTAL counts new-family NaN as zero.
+- **Other seeds (information only).** Across seeds 1..8 the total is detected at origins 39..42 and only 4 to 6 established families within 4 origins. The default seed is a good case and the family-count test is seed-specific.
