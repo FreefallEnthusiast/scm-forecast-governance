@@ -20,3 +20,8 @@ Judgement calls and open questions for the owner to review.
 - **Extra output.** `families.csv` holds the family flags, the per-family step factor and the drawn total factor, so later phases and the report can quote them without re-deriving.
 - **Test robustness.** All tests pass for the default seed. Across seeds 0-29, the pre-break bias test fails for 3 seeds (10, 15, 23), always because realised intermittent demand ran well above or below its expectation and moved a pooled customer ratio by more than the tolerance (e.g. C2 at h=6 = 1.21). The tolerances were not widened to cover them.
 - **Tooling.** The `pytest` first on PATH here (`/root/.local/bin/pytest`) is an isolated tool install without numpy; use `python -m pytest`.
+
+### Review of the synthetic panel (lead session)
+
+- **Intermittent families dominate month-to-month noise in the total.** Their combined monthly total swings roughly 3k to 13k against a smooth-family total of about 13k pre-step, so the total series has a coefficient of variation near 13% before the step. The step to about 37k is still unmistakable, but per-family break detection on F07-F10 will lag and may miss F08 (factor only 1.3). Accepted as the honest lumpy case; phase 4 should report misses rather than tune them away.
+- **Pooled customer bias carries noise from intermittent families.** Post-break (24 months only), C1 reads 0.94 and C4 reads 1.08 overall although both are 1.00 on smooth families; the gap is realised lumpy demand running away from the expected level the customer forecasts against. Within the 20% attention threshold, so accepted. The report should state bias by customer on smooth families as well as overall if the chart looks muddled.
