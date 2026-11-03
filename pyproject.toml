@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fgov"
+version = "0.1.0"
+description = "Model-agnostic forecast governance layer on synthetic demand data"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas",
+    "numpy",
+    "statsforecast",
+    "ruptures",
+    "matplotlib",
+    "pyarrow",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fgov"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
