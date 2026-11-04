@@ -86,8 +86,8 @@ Twenty seeds (0..19) through the full pipeline; results in `scripts/seed_study_2
 | quantity | median | min | max |
 |---|---|---|---|
 | Drawn total step factor | 1.97 | 1.80 | 2.18 |
-| Total-series detection lag (months) | 3 | 1 | 4 |
-| Established families detected within 4 months (of 10) | 6 | 4 | 8 |
+| Total-series detection lag (months) | 2 | 2 | 3 |
+| Established families detected within 4 months (of 10) | 6 | 5 | 10 |
 | Established families never detected | 1 | 0 | 3 |
 | C2 raw bias, 6 months, pre-break | +31% | +21% | +46% |
 | C3 raw bias, 6 months, pre-break | -13% | -23% | -3% |
@@ -98,7 +98,7 @@ Twenty seeds (0..19) through the full pipeline; results in `scripts/seed_study_2
 | Blend 80% coverage, 3 months | 0.73 | 0.71 | 0.74 |
 | Stat baseline 80% coverage, 3 months | 0.57 | 0.55 | 0.60 |
 
-- The customer-bias and value-added findings are stable. The total break is always flagged within four months. Per-family detection within four months never reaches the spec's 10 of 12 on any seed (best is 8 of 10 established plus the 2 new families by rule); the spec's expectation is too optimistic for lumpy families at these step sizes and penalties chosen without hindsight. The default seed, at 7 of 10, is slightly better than the median.
+- The customer-bias and value-added findings are stable. The total break is flagged 2 to 3 months after onset on every seed (rerun after the detector fix). Per-family detection within four months ranges from 5 to 10 of the 10 established families, median 6, so with the 2 new families by rule the spec's 10 of 12 is met on some seeds and not on the median one. The default seed, at 8 of 10, is better than the median.
 - The blend's one-month FVA stays above 60% on every seed because the confirmed order book carries it; the three-month figure sits at 55 to 68.
 - Stat baseline interval coverage is 0.55 to 0.60 on every seed: the two-window conformal intervals under-cover by construction, which the report states.
 
@@ -178,7 +178,7 @@ Numbers in the report I would not defend without the caveat beside them:
 - **Stat baseline coverage 50% before the break.** Two causes are mixed: conformal intervals from only two calibration windows under-cover everywhere, and origins 31 to 36 forecast into the step. The sentence in section 3 attributes it to stale history; that is the larger cause post-break but not the only one pre-break.
 - **Seasonal naive MASE of about 1.5.** A reader who knows MASE expects the scaling method to score near 1. It scores higher out of sample because pre-break origins forecast into the step and lumpy series are rougher out of sample than in. True, but it invites a question.
 - **C1 reads 4 to 8% under-forecast although it was generated unbiased.** The drift comes from pooling intermittent families where the customer forecasts the expected level and 24 post-break months are too few for the lumps to average out.
-- **Per-family detection, 9 of 12.** Below the spec on every seed. The honest number, but a reader will ask whether the penalty could have been chosen better; the answer is that it was chosen without hindsight and that is the point.
+- **Per-family detection, 10 of 12 on the default seed.** Across 20 seeds it is 7 to 12 of 12, median 8, so the default seed is a good one. A reader will ask whether the penalty could have been chosen better; the answer is that it was chosen without hindsight on pre-onset data, and that is the point.
 - **C5 trailing bias +54% in the planner table.** Measured at one-month horizon over the last 12 realised months at origin 59, while the headline +64% is at six months pooled over all origins. Both are right; they are different quantities and the table does not say so.
 
 ## Overnight verification
