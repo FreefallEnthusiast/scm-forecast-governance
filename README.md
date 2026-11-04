@@ -11,9 +11,9 @@ The aim is not a better model. The aim is to show what every forecast should rep
 These numbers come from `outputs/governance_report.md`, default seed.
 
 - C5's own forecast is the least trustworthy: +64% bias at 6 months, and still +34% after bias correction.
-- Total demand stepped from 19,651 to 33,940 units a month. The alert fired at origin 39, 2 months after the onset at month 37.
-- After the break the blend adds +60 pp over seasonal naive at 3 months, but a third of that is routing: intermittent families go to the order book, which still sees most lumpy orders three months out. Without the order book the blend adds +40 pp (`scripts/blend_probe.py`). On smooth families, averaging the three sources adds +56 pp against +43 pp for the best single source.
-- The stat baseline's 80% interval covered the actual only 50% of the time before the break and 59% after, against 72% and 76% for the blend. Intervals built on stale history are too narrow once the level has moved.
+- Total demand stepped from 19,651 to 34,477 units a month. The alert fired at origin 39, 2 months after the onset at month 37, and 10 of 12 families were caught within four months.
+- After the break the blend adds +60 pp over seasonal naive at 3 months, but a third of that is routing: intermittent families go to the order book, which still sees most lumpy orders three months out. Without the order book the blend adds +40 pp (`scripts/blend_probe.py`). On the six smooth established families, averaging the three sources adds +64 pp against +49 pp for the best single source. Value added is the percentage reduction in MASE against seasonal naive. Customer forecasts in this panel are generated from realised demand with bias and noise applied, so their value added is an assumption of the data, not a finding about real customers.
+- The stat baseline's 80% interval covered the actual only 50% of the time at pre-break origins and 59% after, against 72% and 76% for the blend. Intervals built on stale history are too narrow once the level has moved, and the pre-break origins just before month 37 already forecast into the step.
 
 Across 20 seeds (`scripts/seed_study.py`) the picture holds: C5's raw bias after the break is +49% to +80% and falls to 0% to +21% after correction, the total break is flagged 1 to 4 months after onset, and the blend adds 55 to 68 pp over seasonal naive at 3 months. Per-family detection within four months ranges from 4 to 8 of the 10 established families, so the spec's 10 of 12 is not met on any seed. The ranges are in `scripts/seed_study_20seeds.csv` and `NOTES.md`.
 
@@ -62,7 +62,7 @@ The run regenerates everything in `outputs/` from a fixed seed. It takes about 4
 | `outputs/charts/customer_bias_by_horizon.png` | Each customer's bias at 1, 3 and 6 months, raw and bias-corrected, against a 20% threshold. |
 | `outputs/charts/fva_by_method.png` | Value added over seasonal naive at 3 months, by method, before and after the break. |
 | `outputs/charts/tracking_c5.png` | C5 on family F04 through the step: actual, stat baseline, raw and corrected customer forecast. |
-| `outputs/charts/stability_vs_accuracy.png` | Each method's accuracy (MASE) plotted against how much it revises between origins. |
+| `outputs/charts/stability_vs_accuracy.png` | Each method's accuracy (MASE) plotted against how much it revises between successive forecasts of the same month. |
 
 `outputs/seed_study.csv` is not written by the run. It comes from `scripts/seed_study.py`, which reruns the pipeline over other seeds to check robustness.
 
@@ -102,4 +102,4 @@ docs/
 outputs/                 generated; the report, its two tables and the charts are committed, the data files are not
 ```
 
-`NOTES.md` lists the judgement calls and the known deviations from the spec. The main one concerns break detection. The spec expected the step to be caught within four months in 10 of 12 families. On the default seed it is caught in 9 of 12. F08 steps only 1.3x under lumpy demand and is never detected. This is reported as found; the detector was not tuned to hide it.
+`NOTES.md` lists the judgement calls, the deviations from the spec and what three independent checks (an adversarial review, mutation testing and a parameter sweep) found and changed. Break detection: the spec expected the step caught within four months in 10 of 12 families; on the default seed it is 10 of 12. F08 steps only 1.3x under lumpy demand and is never detected, and F07 is six months late. The detection penalty was chosen on pre-break data only.

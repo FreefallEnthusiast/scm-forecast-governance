@@ -15,11 +15,12 @@ import pandas as pd
 import ruptures as rpt
 
 ONSET = 37                    # step onset month (synth default)
-EARLY_ALLOWANCE = 1           # long-lead families step one month early
+LONG_LEAD_OFFSET = 1          # long-lead families step this many months before the onset
+EARLY_ALLOWANCE = 2           # a break placed up to this many months before a family's onset counts (the ramp)
 NEW_FAMILY_HISTORY = 12       # months of history before a new family is trusted
 DEFAULT_ORIGINS = range(24, 61)
 PENALTY_GRID = tuple(np.round(np.arange(0.5, 10.01, 0.25), 2))
-DEFAULT_PENALTY = 2.0         # choose_penalty() on the default synth panel; see its docstring
+DEFAULT_PENALTY = 2.25        # choose_penalty() on the default synth panel; see its docstring
 
 
 def detect_at_origin(series: pd.Series, origin: int, penalty: float, min_size: int = 3) -> int | None:
@@ -31,7 +32,8 @@ def detect_at_origin(series: pd.Series, origin: int, penalty: float, min_size: i
     if len(s) < 2 * min_size or s.mean() <= 0:
         return None
     x = (s.to_numpy(dtype=float) / s.mean()).reshape(-1, 1)
-    bkps = rpt.Pelt(model="rbf", min_size=min_size).fit(x).predict(pen=penalty)
+    # jump=1: consider every month. The library default (5) only places breaks on a 5-month grid.
+    bkps = rpt.Pelt(model="rbf", min_size=min_size, jump=1).fit(x).predict(pen=penalty)
     bkps = [b for b in bkps if b < len(s)]          # last entry is the series end
     return int(s.index[bkps[-1]]) if bkps else None
 
@@ -78,9 +80,17 @@ def choose_penalty(actuals: pd.DataFrame, grid=PENALTY_GRID, onset: int = ONSET)
     return float(grid[-1])
 
 
-def first_detection(scanned: pd.DataFrame, onset: int = ONSET) -> pd.Series:
-    """Per name, the first origin whose last break month is >= onset - 1 (NaN if never)."""
-    hit = scanned[scanned.break_month.fillna(0) >= onset - EARLY_ALLOWANCE]
+def family_onsets(actuals: pd.DataFrame, onset: int = ONSET) -> dict:
+    """Onset month per series name: long-lead families step LONG_LEAD_OFFSET months early."""
+    ll = actuals.drop_duplicates("family").set_index("family")["is_long_lead"]
+    return {"TOTAL": onset, **{f: onset - LONG_LEAD_OFFSET * int(v) for f, v in ll.items()}}
+
+
+def first_detection(scanned: pd.DataFrame, onsets: dict) -> pd.Series:
+    """Per name, the first origin whose last break month is within EARLY_ALLOWANCE
+    months before that series' onset, or later (NaN if never)."""
+    threshold = scanned.name.map(onsets) - EARLY_ALLOWANCE
+    hit = scanned[scanned.break_month.fillna(0) >= threshold]
     out = hit.groupby("name")["origin"].min()
     return out.reindex(scanned.name.unique()).astype(float)
 
@@ -89,9 +99,11 @@ def alert_table(actuals: pd.DataFrame, onset: int = ONSET, origins=None,
                 penalty: float = DEFAULT_PENALTY) -> pd.DataFrame:
     """One row per family plus TOTAL.
 
-    pre_break_level: mean monthly total over the 12 months before onset.
+    pre_break_level: mean monthly total over the 12 months before the series' own
+    onset (long-lead families step LONG_LEAD_OFFSET months early).
     post_break_level: mean monthly total from break_month (PELT break month at
     the detection origin) to the last origin scanned; both NaN if never detected.
+    months_after_onset is measured from the series' own onset.
     New families: reason "new_family", break month = launch (NaN if not launched yet).
     """
     origins = list(DEFAULT_ORIGINS if origins is None else origins)
@@ -99,12 +111,14 @@ def alert_table(actuals: pd.DataFrame, onset: int = ONSET, origins=None,
     est = actuals[~actuals.family.isin(new)]
     scanned = pd.concat([scan(actuals, origins, penalty, "total"),
                          scan(est, origins, penalty, "family")], ignore_index=True)
-    first = first_detection(scanned, onset)
+    onsets = family_onsets(actuals, onset)
+    first = first_detection(scanned, onsets)
     series = {**monthly_totals(actuals, "total"), **monthly_totals(actuals, "family")}
     rows = []
     for name, full in series.items():
         s = full[full.index <= origins[-1]]
-        pre = s[(s.index >= onset - 12) & (s.index < onset)].mean()
+        own = onsets[name]
+        pre = s[(s.index >= own - 12) & (s.index < own)].mean()
         if name in new:
             at = start = float(s.dropna().index.min()) if s.notna().any() else np.nan
             reason, pre = "new_family", np.nan
@@ -115,7 +129,7 @@ def alert_table(actuals: pd.DataFrame, onset: int = ONSET, origins=None,
             start = float(bm.iloc[0]) if pd.notna(at) else np.nan
         post = s[s.index >= start].mean() if pd.notna(start) else np.nan
         rows.append({"family": name, "break_detected_at_origin": at, "break_month": start,
-                     "months_after_onset": at - onset if pd.notna(at) else np.nan,
+                     "months_after_onset": at - own if pd.notna(at) else np.nan,
                      "pre_break_level": pre, "post_break_level": post, "reason": reason})
     return pd.DataFrame(rows)
 

@@ -44,7 +44,8 @@ def main(argv=None):
     step("break alerts")
     forecasts, choices = forecast.run_all(frames, alerts, origins=range(args.origins_from, 61))
     step("candidate forecasts")
-    report.build_all(frames, forecasts, choices, alerts, onset=params.step_onset, outdir=out)
+    report.build_all(frames, forecasts, choices, alerts, onset=params.step_onset, history_end=params.n_history,
+                     outdir=out)
     step("tables, charts, report")
     print(f"{'total':<28} {time.perf_counter() - start:6.1f} s\n")
     for f in sorted(p for p in out.rglob("*") if p.is_file() and p.name != ".gitkeep"):

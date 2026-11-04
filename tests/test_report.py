@@ -127,7 +127,8 @@ def test_onset_threads_through(tmp_path):
     frames = synth.generate(params)
     alerts = breaks.alert_table(frames["actuals"], onset=params.step_onset)
     det = alerts.dropna(subset=["break_detected_at_origin"])
-    assert (det.months_after_onset == det.break_detected_at_origin - 40).all()
+    own = det.family.map(breaks.family_onsets(frames["actuals"], 40))
+    assert (det.months_after_onset == det.break_detected_at_origin - own).all()
     origins = range(37, 49)
     fc = stub_forecasts(frames, origins, horizons=(1, 3))
     tables = report.build_all(frames, fc, stub_choices(frames["families"].family, origins), alerts,

@@ -150,7 +150,7 @@ def test_empirical_interval_scales_with_customer_level(frames):
 def test_stat_baseline_three_origins_is_fast(frames):
     t0 = time.perf_counter()
     out = forecast.stat_baseline(frames["actuals"], [40, 41, 42], HORIZONS)
-    assert time.perf_counter() - t0 < 10
+    assert time.perf_counter() - t0 < 30      # about 6 s idle; guards the 116 s single-worker regression
     assert len(out) > 0 and (out.forecast >= 0).all()
 
 

@@ -22,7 +22,7 @@ Bias in percent of actual demand (positive = customer over-forecasts), all origi
 
 ## 3. What happened at the break
 
-Total demand stepped from 19,651 to 33,940 units a month and the alert fired at origin 39, 2 months after the onset at month 37.
+Total demand stepped from 19,651 to 34,477 units a month and the alert fired at origin 39, 2 months after the onset at month 37.
 
 ![total_demand_and_break](charts/total_demand_and_break.png)
 
@@ -30,29 +30,29 @@ For C5 on F04 (the long-lead family with the largest step, 1.83x), the raw custo
 
 ![tracking_c5](charts/tracking_c5.png)
 
-The stat baseline's 80% interval covered the actual 50% of the time before the break and 59% after, against 72% and 76% for the blend; intervals built on stale history are too narrow once the level has moved, so a planner reading them as 80% bands would be surprised far more often than one time in five.
+The stat baseline's 80% interval covered the actual 50% of the time at pre-break origins and 59% after, against 72% and 76% for the blend. Intervals built on stale history are too narrow once the level has moved, so a planner reading them as 80% bands would be surprised far more often than one time in five. Pre-break figures are grouped by forecast origin, so forecasts made in the months just before month 37 for targets inside the step count as pre-break; part of the pre-break shortfall is that, and part is the two-window conformal calibration, which under-covers everywhere.
 
 Families never detected: F08.
 
 | family | detected_at_origin | months_after_onset | pre_break_level | post_break_level | reason |
 |---|---|---|---|---|---|
-| TOTAL | 39 | 2 | 19,651 | 33,940 | detected |
-| F01 | 40 | 3 | 2,870 | 3,626 | detected |
-| F02 | 39 | 2 | 2,626 | 3,832 | detected |
-| F03 | 39 | 2 | 1,622 | 2,296 | detected |
-| F04 | 38 | 1 | 1,355 | 2,389 | detected |
-| F05 | 41 | 4 | 2,025 | 4,617 | detected |
-| F06 | 40 | 3 | 3,605 | 6,154 | detected |
+| TOTAL | 39 | 2 | 19,651 | 34,477 | detected |
+| F01 | 40 | 4 | 2,822 | 3,675 | detected |
+| F02 | 39 | 3 | 2,579 | 3,875 | detected |
+| F03 | 39 | 3 | 1,607 | 2,320 | detected |
+| F04 | 39 | 3 | 1,324 | 2,389 | detected |
+| F05 | 40 | 3 | 2,025 | 4,733 | detected |
+| F06 | 39 | 2 | 3,605 | 6,264 | detected |
 | F07 | 43 | 6 | 1,657 | 3,387 | detected |
 | F08 |  |  | 1,231 |  |  |
-| F09 | 41 | 4 | 1,122 | 1,452 | detected |
-| F10 | 44 | 7 | 1,538 | 3,188 | detected |
+| F09 | 41 | 4 | 1,122 | 1,476 | detected |
+| F10 | 40 | 3 | 1,538 | 3,302 | detected |
 | F11 | 37 | 0 |  | 1,190 | new_family |
 | F12 | 37 | 0 |  | 779 | new_family |
 
 ## 4. Which forecast source to use where
 
-After the break blend adds +60 pp over seasonal naive at 3 months (stat baseline +6 pp before the break and +20 pp after), and 12 of 60 planner rows need attention. The blend's lead is routing, not a model. On the intermittent families it hands the forecast to the order book, which still sees most lumpy orders 3 months out and adds +69 pp there against +8 pp for the bias-corrected customer forecast. On the smooth families it averages the three sources and adds +56 pp, above the best single source (customer bias-corrected, +43 pp), because their errors are not aligned. At 1 month ahead the blend adds +75 pp, and there too it is the confirmed order book doing the work.
+After the break blend adds +60 pp over seasonal naive at 3 months (stat baseline +6 pp before the break and +20 pp after), and 12 of 60 planner rows need attention. Value added here is the percentage reduction in MASE against seasonal naive. The blend's lead is routing, not a model. On the intermittent families it hands the forecast to the order book, which still sees most lumpy orders 3 months out and adds +69 pp there against +8 pp for the bias-corrected customer forecast. On the six smooth established families it averages the three sources and adds +64 pp, above the best single source (customer bias-corrected, +49 pp), because their errors are not aligned; on the two new families it adds +23 pp. At 1 month ahead the blend adds +75 pp, and there too it is the confirmed order book doing the work. One caveat applies to every customer-forecast number: in this synthetic panel the customer forecasts are generated from the realised demand with bias and noise applied, so their value added is an assumption of the panel, not a finding about real customers.
 
 ![fva_by_method](charts/fva_by_method.png)
 
@@ -123,7 +123,7 @@ Recommended source by family at origin 59: average for 6 of 12 families, order_b
 
 ## 5. Stability
 
-Apart from seasonal naive (0.01; it repeats last year's actual, so it can hardly revise), customer bias-corrected revises least (0.19 of mean demand per revision, MASE 1.09) and order book most (0.53, MASE 1.19).
+Apart from seasonal naive (0.01; it repeats last year's actual, so it can hardly revise), customer bias-corrected revises least (0.19 of mean demand per revision, MASE 1.09) and order book most (0.53, MASE 1.19). A revision is the change between successive forecasts of the same target month, made 6, 3 and 1 months ahead.
 
 ![stability_vs_accuracy](charts/stability_vs_accuracy.png)
 

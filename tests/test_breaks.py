@@ -62,7 +62,7 @@ def test_constructed_step_detected_at_month_30():
     months = np.arange(1, 41)
     values = np.where(months >= 30, 200.0, 100.0) * rng.lognormal(0, 0.05, len(months))
     bm = breaks.detect_at_origin(pd.Series(values, index=months), 40, breaks.DEFAULT_PENALTY)
-    assert bm is not None and abs(bm - 30) <= 1
+    assert bm == 30                               # exact: the detector considers every month (jump=1)
 
 
 # --- Tests added from mutation testing -------------------------------------------------
@@ -76,12 +76,13 @@ def _family_series(actuals):
 
 def test_alert_table_levels_lags_and_reasons(actuals):
     # A shorter scan (origins 24..42) so the level windows must stop at the last origin and
-    # families first caught later (F07 at 43, F10 at 44) must read as not detected.
+    # a family first caught later (F07 at 43) must read as not detected.
     last = 42
     al = breaks.alert_table(actuals, onset=ONSET, origins=range(24, last + 1)).set_index("family")
     series = _family_series(actuals)
     assert set(al.index) == set(series)
-    assert set(al.index[al.reason.isna()]) == {"F07", "F08", "F10"}
+    assert set(al.index[al.reason.isna()]) == {"F07", "F08"}
+    onsets = breaks.family_onsets(actuals, ONSET)
     pen = breaks.DEFAULT_PENALTY
     for name, full in series.items():
         s, row = full[full.index <= last], al.loc[name]
@@ -91,19 +92,19 @@ def test_alert_table_levels_lags_and_reasons(actuals):
             assert row.months_after_onset == 0 and np.isnan(row.pre_break_level)
             assert row.post_break_level == pytest.approx(s.loc[ONSET:].mean())
             continue
-        if name in ("F07", "F08", "F10"):          # not detected by origin 42 (F08 never)
+        if name in ("F07", "F08"):                 # not detected by origin 42 (F08 never)
             assert pd.isna(row.reason)
             assert row[["break_detected_at_origin", "break_month", "months_after_onset",
                         "post_break_level"]].isna().all()
             continue
-        at = int(row.break_detected_at_origin)
+        at, own = int(row.break_detected_at_origin), onsets[name]
         assert row.reason == "detected"
-        assert row.months_after_onset == at - ONSET
-        assert breaks.detect_at_origin(full, at, pen) >= ONSET - 1
+        assert row.months_after_onset == at - own
+        assert breaks.detect_at_origin(full, at, pen) >= own - breaks.EARLY_ALLOWANCE
         before = breaks.detect_at_origin(full, at - 1, pen)
-        assert before is None or before < ONSET - 1
+        assert before is None or before < own - breaks.EARLY_ALLOWANCE
         assert row.break_month == breaks.detect_at_origin(full, at, pen)
-        assert row.pre_break_level == pytest.approx(s.loc[ONSET - 12:ONSET - 1].mean())
+        assert row.pre_break_level == pytest.approx(s.loc[own - 12:own - 1].mean())
         assert row.post_break_level == pytest.approx(s.loc[int(row.break_month):].mean())
 
 
@@ -121,8 +122,7 @@ def test_false_alarms_counts_recent_breaks_before_onset_only():
 
 
 def _grid_step(scale=1.0):
-    # PELT's default jump of 5 only places breaks at positions 5, 10, ...; position 30
-    # is month 31, so a step at month 31 can be located exactly.
+    # A clean doubling at month 31; the detector considers every month (jump=1).
     months = np.arange(1, 41)
     rng = np.random.default_rng(0)
     values = np.where(months >= 31, 200.0, 100.0) * rng.lognormal(0, 0.05, len(months))

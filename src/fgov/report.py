@@ -68,7 +68,7 @@ def planner_table(frames, forecasts, choices, alerts):
     bias = metrics.customer_bias_trailing(frames["customer_forecasts"], actuals, origin, 1)
     out["customer_bias_trailing"] = out.customer.map(bias.set_index("customer").bias_ratio)
     out["history_unreliable"] = [breaks.history_unreliable(alerts, f, origin) for f in out.family]
-    detected_now = set(alerts.loc[alerts.break_detected_at_origin == origin, "family"])
+    detected_now = set(alerts.loc[(alerts.break_detected_at_origin == origin) & (alerts.reason == "detected"), "family"])
     triggers = zip([f"customer bias {100 * (b - 1):+.0f}%" if abs(b - 1) > 0.20 else ""
                     for b in out.customer_bias_trailing],
                    [f"source changed from {p}" if pd.notna(p) and p != r else ""
@@ -85,7 +85,7 @@ def planner_table(frames, forecasts, choices, alerts):
                            ascending=[False, True, True]).reset_index(drop=True)
 
 
-def build_tables(frames, forecasts, choices, alerts, onset=breaks.ONSET):
+def build_tables(frames, forecasts, choices, alerts, onset=breaks.ONSET, history_end=HISTORY_END):
     """Spec tables plus three the charts and text need: tracking, context, total_demand."""
     actuals, fams = frames["actuals"], frames["families"]
     evaluated = metrics.evaluate(forecasts, actuals, break_month=onset)
@@ -104,11 +104,12 @@ def build_tables(frames, forecasts, choices, alerts, onset=breaks.ONSET):
                    & (summary.method != "seasonal_naive")].set_index("method").fva_vs_naive
     st = stab[stab.period == "all"].set_index("method").stability
     context = pd.DataFrame([{
-        "onset": onset, "total_detected_at": total.break_detected_at_origin,
+        "onset": onset, "history_end": history_end, "total_detected_at": total.break_detected_at_origin,
         "total_months_after_onset": total.months_after_onset, "total_break_month": total.break_month,
         "total_pre_level": total.pre_break_level, "total_post_level": total.post_break_level,
         "track_family": fam, "track_step_factor": long_lead.step_factor.max(),
         "track_detected_at": track.break_detected_at_origin, "track_break_month": track.break_month,
+        "track_onset": breaks.family_onsets(actuals, onset)[fam],
         "worst_customer": worst.customer, "worst_horizon": worst.horizon, "worst_bias": worst.bias,
         "pairs_closer": int(closer.sum()), "pairs_total": int(len(closer)),
         "best_post": post.idxmax() if post.notna().any() else "blend", "best_post_fva": post.max(),
@@ -124,10 +125,11 @@ def build_tables(frames, forecasts, choices, alerts, onset=breaks.ONSET):
                               columns={"month": "target_month", "actual": "value"})[cols]],
                          ignore_index=True)
     total_demand = breaks.monthly_totals(actuals, "total")["TOTAL"].fillna(0)
-    typed = evaluated.merge(fams[["family", "is_intermittent"]], on="family")
+    typed = evaluated.merge(fams[["family", "is_intermittent", "is_new"]], on="family")
+    typed["group"] = np.where(typed.is_intermittent, "intermittent", np.where(typed.is_new, "new", "smooth"))
     return {"summary": summary, "by_customer": by_customer,
             "by_family": metrics.summarise(evaluated, by=("family",)), "stability": stab,
-            "by_type": metrics.fva(metrics.summarise(typed, by=("is_intermittent",))),
+            "by_type": metrics.fva(metrics.summarise(typed, by=("group",))),
             "alerts": alerts, "planner": planner_table(frames, forecasts, choices, alerts),
             "tracking": tracking, "context": context,
             "total_demand": total_demand.rename("total").reset_index()}
@@ -178,8 +180,8 @@ def chart_total(tables, outdir):
     fig, ax = plt.subplots(figsize=(9, 4.2))
     ax.plot(t.month, t.total / 1000, color=COLOR["stat_baseline"], lw=2, label="Total demand")
     top = ax.get_ylim()[1]
-    ax.axvline(HISTORY_END + 0.5, color=AXIS, lw=0.8)
-    ax.text(HISTORY_END + 1, top * 0.04, "holdout", color=INK2, fontsize=9)
+    ax.axvline(c.history_end + 0.5, color=AXIS, lw=0.8)
+    ax.text(c.history_end + 1, top * 0.04, "holdout", color=INK2, fontsize=9)
     mark_break(ax, c.total_break_month, c.total_detected_at, top, c.onset)
     if pd.notna(c.total_detected_at):
         ax.annotate(f"detected {c.total_months_after_onset:.0f} months after onset",
@@ -188,9 +190,10 @@ def chart_total(tables, outdir):
                     arrowprops={"arrowstyle": "-", "color": INK2, "lw": 0.8})
     ax.set_ylim(0, top * 1.02)
     ax.set_xlim(1, t.month.max())
-    return finish(fig, ax, outdir, CHARTS[0], f"Total demand stepped from {c.total_pre_level / 1000:.1f}k to "
-                  f"{c.total_post_level / 1000:.1f}k a month; break flagged "
-                  f"{num(c.total_months_after_onset, '.0f')} months after onset",
+    title = (f"Total demand stepped from {c.total_pre_level / 1000:.1f}k to {c.total_post_level / 1000:.1f}k a month; "
+             f"break flagged {c.total_months_after_onset:.0f} months after onset" if pd.notna(c.total_detected_at)
+             else f"Total demand averaged {c.total_pre_level / 1000:.1f}k a month before month {c.onset}; no break alert fired")
+    return finish(fig, ax, outdir, CHARTS[0], title,
                   "Month", "Total demand (thousand units / month)", {"loc": "upper left"})
 
 
@@ -242,7 +245,7 @@ def chart_tracking(tables, outdir):
         if len(d):
             ax.plot(d.target_month, d.value, color=COLOR[series], label=LABEL[series], **st)
     top = ax.get_ylim()[1] * 1.2
-    mark_break(ax, c.track_break_month, c.track_detected_at, top, c.onset)
+    mark_break(ax, c.track_break_month, c.track_detected_at, top, c.track_onset)
     ax.set_ylim(0, top * 1.02)
     return finish(fig, ax, outdir, CHARTS[3], f"{TRACK_CUSTOMER} on {c.track_family}, {TRACK_HORIZON} months "
                   f"ahead: after the break raw customer forecast {pct(tracking_bias(t, 'customer_raw', c.onset))}, "
@@ -286,7 +289,7 @@ def chart_stability(tables, outdir):
     return finish(fig, ax, outdir, CHARTS[4],
                   f"Apart from seasonal naive, {name(c.calm).lower()} revises least; lower-left is better",
                   f"MASE at {TRACK_HORIZON}-month horizon (lower = more accurate)",
-                  "Mean revision between origins (share of mean demand)", loc="left")
+                  "Mean revision between successive forecasts of a target (share of mean demand)", loc="left")
 
 
 def make_charts(tables, outdir: str | Path = "outputs"):
@@ -333,32 +336,50 @@ def write_report(tables, outdir: str | Path = "outputs"):
     blend_h1 = fv["all"].get((1, "blend"), np.nan)
     bt = tables["by_type"]
     bt = bt[(bt.horizon == TRACK_HORIZON) & (bt.period == ("post" if (bt.period == "post").any() else "all"))]
-    fva_of = lambda m, inter: bt[(bt.method == m) & (bt.is_intermittent == inter)].fva_vs_naive.max()  # noqa: E731
-    singles = pd.Series({m: fva_of(m, False) for m in ("stat_baseline", "customer_bias_corrected", "order_book")})
+    fva_of = lambda m, grp: bt[(bt.method == m) & (bt.group == grp)].fva_vs_naive.max()  # noqa: E731
+    singles = pd.Series({m: fva_of(m, "smooth") for m in ("stat_baseline", "customer_bias_corrected", "order_book")})
     best_smooth = singles.idxmax() if singles.notna().any() else "stat_baseline"
-    book_note = (f"The blend's lead is routing, not a model. On the intermittent families it hands the forecast "
-                 f"to the order book, which still sees most lumpy orders {TRACK_HORIZON} months out and adds "
-                 f"{num(fva_of('order_book', True), '+.0f')} pp there against {num(fva_of('customer_bias_corrected', True), '+.0f')} pp "
-                 f"for the bias-corrected customer forecast. On the smooth families it averages the three sources and "
-                 f"adds {num(fva_of('blend', False), '+.0f')} pp, above the best single source ({name(best_smooth).lower()}, "
-                 f"{num(singles.max(), '+.0f')} pp), because their errors are not aligned. At 1 month ahead the blend "
-                 f"adds {num(blend_h1, '+.0f')} pp, and there too it is the confirmed order book doing the work.")
+    book_note = (f"Value added here is the percentage reduction in MASE against seasonal naive. The blend's lead is "
+                 f"routing, not a model. On the intermittent families it hands the forecast to the order book, which "
+                 f"still sees most lumpy orders {TRACK_HORIZON} months out and adds {num(fva_of('order_book', 'intermittent'), '+.0f')} pp "
+                 f"there against {num(fva_of('customer_bias_corrected', 'intermittent'), '+.0f')} pp for the bias-corrected "
+                 f"customer forecast. On the six smooth established families it averages the three sources and adds "
+                 f"{num(fva_of('blend', 'smooth'), '+.0f')} pp, above the best single source ({name(best_smooth).lower()}, "
+                 f"{num(singles.max(), '+.0f')} pp), because their errors are not aligned; on the two new families it adds "
+                 f"{num(fva_of('blend', 'new'), '+.0f')} pp. At 1 month ahead the blend adds {num(blend_h1, '+.0f')} pp, and "
+                 f"there too it is the confirmed order book doing the work. One caveat applies to every customer-forecast "
+                 f"number: in this synthetic panel the customer forecasts are generated from the realised demand with bias "
+                 f"and noise applied, so their value added is an assumption of the panel, not a finding about real customers.")
     mase = s[(s.horizon == TRACK_HORIZON) & (s.period == "all")].set_index("method").mase
     stab = tables["stability"][tables["stability"].period == "all"].set_index("method").stability
     missed = ", ".join(sorted(alerts.family[alerts.break_detected_at_origin.isna() & alerts.reason.ne("new_family")]))
     sources = plan.drop_duplicates("family").recommended_source.value_counts()
     alerts_md = alerts.drop(columns="break_month").rename(columns={"break_detected_at_origin": "detected_at_origin"})
-    alert_note = (f"the alert fired at origin {c.total_detected_at:.0f}, {c.total_months_after_onset:.0f} months "
-                  f"after the onset at month {c.onset}" if pd.notna(c.total_detected_at)
-                  else f"no break alert fired (onset at month {c.onset})")
+    ratio = c.total_post_level / c.total_pre_level if c.total_pre_level > 0 else np.nan
+    if pd.isna(c.total_detected_at):
+        step_note = (f"Total demand averaged {c.total_pre_level:,.0f} units a month in the year before month {c.onset}; "
+                     f"no break alert fired on the total.")
+    elif ratio >= 1.15:
+        step_note = (f"Total demand stepped from {c.total_pre_level:,.0f} to {c.total_post_level:,.0f} units a month and "
+                     f"the alert fired at origin {c.total_detected_at:.0f}, {c.total_months_after_onset:.0f} months after "
+                     f"the onset at month {c.onset}.")
+    else:
+        step_note = (f"The detector fired at origin {c.total_detected_at:.0f}, but total demand moved only "
+                     f"{pct(ratio - 1)} ({c.total_pre_level:,.0f} to {c.total_post_level:,.0f} units a month), so treat "
+                     f"the alert as a possible false alarm.")
     for col in ("detected_at_origin", "months_after_onset", "pre_break_level", "post_break_level"):
         alerts_md[col] = alerts_md[col].round().astype("Int64")
     cov = lambda m, p: s[(s.horizon == TRACK_HORIZON) & (s.period == p) & (s.method == m)].coverage80.max()  # noqa: E731
+    gap = cov("blend", "post") - cov("stat_baseline", "post")
     cov_note = (f"The stat baseline's 80% interval covered the actual {num(cov('stat_baseline', 'pre'), '.0%')} of the "
-                f"time before the break and {num(cov('stat_baseline', 'post'), '.0%')} after, against "
-                f"{num(cov('blend', 'pre'), '.0%')} and {num(cov('blend', 'post'), '.0%')} for the blend; intervals "
-                f"built on stale history are too narrow once the level has moved, so a planner reading them as "
-                f"80% bands would be surprised far more often than one time in five.")
+                f"time at pre-break origins and {num(cov('stat_baseline', 'post'), '.0%')} after, against "
+                f"{num(cov('blend', 'pre'), '.0%')} and {num(cov('blend', 'post'), '.0%')} for the blend. "
+                + ("Intervals built on stale history are too narrow once the level has moved, so a planner reading them "
+                   "as 80% bands would be surprised far more often than one time in five. " if gap > 0.05 else
+                   "The two are close in this run, so stale history is not the main cause of the shortfall. ")
+                + f"Pre-break figures are grouped by forecast origin, so forecasts made in the months just before "
+                f"month {c.onset} for targets inside the step count as pre-break; part of the pre-break shortfall is "
+                f"that, and part is the two-window conformal calibration, which under-covers everywhere.")
     img = lambda n: f"![{n}](charts/{n}.png)"  # noqa: E731
     track = lambda m: pct(tracking_bias(tables["tracking"], m, c.onset))  # noqa: E731
     text = f"""# Forecast governance report
@@ -379,7 +400,7 @@ Bias in percent of actual demand (positive = customer over-forecasts), all origi
 
 ## 3. What happened at the break
 
-Total demand stepped from {c.total_pre_level:,.0f} to {c.total_post_level:,.0f} units a month and {alert_note}.
+{step_note}
 
 {img("total_demand_and_break")}
 
@@ -405,7 +426,7 @@ Recommended source by family at origin {plan.origin_month.iloc[0]}: {", ".join(f
 
 ## 5. Stability
 
-Apart from seasonal naive ({stab.get("seasonal_naive", np.nan):.2f}; it repeats last year's actual, so it can hardly revise), {name(c.calm).lower()} revises least ({stab[c.calm]:.2f} of mean demand per revision, MASE {mase.get(str(c.calm), np.nan):.2f}) and {name(c.jumpy).lower()} most ({stab[c.jumpy]:.2f}, MASE {mase.get(str(c.jumpy), np.nan):.2f}).
+Apart from seasonal naive ({stab.get("seasonal_naive", np.nan):.2f}; it repeats last year's actual, so it can hardly revise), {name(c.calm).lower()} revises least ({stab[c.calm]:.2f} of mean demand per revision, MASE {mase.get(str(c.calm), np.nan):.2f}) and {name(c.jumpy).lower()} most ({stab[c.jumpy]:.2f}, MASE {mase.get(str(c.jumpy), np.nan):.2f}). A revision is the change between successive forecasts of the same target month, made 6, 3 and 1 months ahead.
 
 {img("stability_vs_accuracy")}
 
@@ -433,8 +454,9 @@ A forecast is not ready for a planner until it reports the items below; this rep
     return out / "governance_report.md"
 
 
-def build_all(frames, forecasts, choices, alerts, outdir: str | Path = "outputs", onset=breaks.ONSET):
-    tables = build_tables(frames, forecasts, choices, alerts, onset)
+def build_all(frames, forecasts, choices, alerts, outdir: str | Path = "outputs", onset=breaks.ONSET,
+              history_end=HISTORY_END):
+    tables = build_tables(frames, forecasts, choices, alerts, onset, history_end)
     make_charts(tables, outdir)
     tables["planner"].to_csv(Path(outdir) / "planner_table.csv", index=False)
     write_report(tables, outdir)
