@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "pyright"]
+dev = ["pytest", "ruff", "pyright", "pandas-stubs"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fgov"]

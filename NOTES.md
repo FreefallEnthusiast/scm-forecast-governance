@@ -140,7 +140,7 @@ On smooth families the three sources' errors are uncorrelated or negatively corr
 
 By family type at 3 months (with the book): on intermittent families the blend routes to the order book at every origin and adds +73 pre / +69 post, where the bias-corrected customer forecast adds only +12 / +8. On smooth families the blend averages and adds +55 / +56, above the best single source (+32 / +43). Without the book the intermittent figure falls to +11 / +10 and the smooth figure to +43 / +52.
 
-**Finding.** The +60 pp at 3 months is real and not leaked, but about two thirds of it is the order book: lumpy orders are mostly on the book three months out (80% visibility in the generator), so the blend hands intermittent families to it. The rest is genuine averaging gain on smooth families, where the inputs' errors are not aligned. At 6 months the order book hurts and the blend without it is as good or better. The report's section 4 now states the decomposition with generated numbers, and the README headline quotes the honest version.
+**Finding.** The +60 pp at 3 months is real and not leaked, but a third of it is the order book (without it the blend adds +40, not +60): lumpy orders are mostly on the book three months out (80% visibility in the generator), so the blend hands intermittent families to it. The rest is genuine averaging gain on smooth families, where the inputs' errors are not aligned. At 6 months the order book hurts and the blend without it is as good or better. The report's section 4 now states the decomposition with generated numbers, and the README headline quotes the honest version.
 
 ### 3. Interval coverage in the report
 
@@ -180,3 +180,9 @@ Numbers in the report I would not defend without the caveat beside them:
 - **C1 reads 4 to 8% under-forecast although it was generated unbiased.** The drift comes from pooling intermittent families where the customer forecasts the expected level and 24 post-break months are too few for the lumps to average out.
 - **Per-family detection, 9 of 12.** Below the spec on every seed. The honest number, but a reader will ask whether the penalty could have been chosen better; the answer is that it was chosen without hindsight and that is the point.
 - **C5 trailing bias +54% in the planner table.** Measured at one-month horizon over the last 12 realised months at origin 59, while the headline +64% is at six months pooled over all origins. Both are right; they are different quantities and the table does not say so.
+
+## Overnight verification
+
+### Cold-start reproduction
+
+A fresh clone of `main` into a clean virtual environment, following the README only, reproduced every committed output byte for byte (numpy and coreforecast were one patch version newer; nothing moved). Findings fixed in this commit: `pandas-stubs` was missing from the `dev` extra, so `pyright src` reported 29 errors on a fresh install; the README's line count, run time, layout note on `outputs/`, and a dangling sentence about the placeholder docs were wrong or unclear; the README said the order book was "two thirds" of the blend's gain when its own numbers (+60 with, +40 without) make it a third; the "+40 pp" figure had no script in the repo, so `scripts/blend_probe.py` is now committed. Still open: a test with a fixed 10 s wall-clock limit fails on a busy machine (fixed below once the mutation run finishes with the test files), and the hosting default branch is still the working branch.
