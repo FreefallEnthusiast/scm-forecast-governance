@@ -3,6 +3,8 @@ import time
 import numpy as np
 import pandas as pd
 import pytest
+from statsforecast import StatsForecast
+from statsforecast.models import TSB
 
 from fgov import breaks, forecast, synth
 
@@ -150,3 +152,124 @@ def test_stat_baseline_three_origins_is_fast(frames):
     out = forecast.stat_baseline(frames["actuals"], [40, 41, 42], HORIZONS)
     assert time.perf_counter() - t0 < 10
     assert len(out) > 0 and (out.forecast >= 0).all()
+
+
+# --- Tests added from mutation testing -------------------------------------------------
+
+
+def _garbage_after(actuals, origin):
+    g = actuals.copy()
+    future = g.month > origin
+    g.loc[future, "actual"] = np.random.default_rng(0).uniform(0, 1e6, future.sum())
+    return g
+
+
+def test_intervals_use_no_future_actuals(frames):
+    a, origin = frames["actuals"], 40
+    sn = forecast.seasonal_naive(a, range(25, origin + 1), HORIZONS)
+    real = forecast.empirical_interval(sn, a, origin=origin)
+    fake = forecast.empirical_interval(sn, _garbage_after(a, origin), origin=origin)
+    assert real.notna().all(axis=1).mean() > 0.9
+    pd.testing.assert_frame_equal(real, fake)
+
+
+def test_stat_baseline_uses_no_future_actuals(frames):
+    a, origin = frames["actuals"], 40
+    real = forecast.stat_baseline(a, [origin], (1,))
+    fake = forecast.stat_baseline(_garbage_after(a, origin), [origin], (1,))
+    pd.testing.assert_frame_equal(real, fake)
+
+
+def _one_series(values, customer="C1", family="F01"):
+    return pd.DataFrame({"customer": customer, "family": family,
+                         "month": np.arange(1, len(values) + 1), "actual": np.asarray(values, float)})
+
+
+@pytest.mark.parametrize("zero_share,expect_tsb", [(0.5, True), (0.375, False)])
+def test_intermittent_threshold_routes_to_tsb(zero_share, expect_tsb):
+    n = 24
+    rng = np.random.default_rng(1)
+    y = rng.uniform(50, 150, n).round()
+    y[rng.permutation(n)[:int(zero_share * n)]] = 0.0
+    got = forecast._stat_one_origin(_one_series(y), n, n_jobs=1).sort_values("ds")["forecast"]
+    df = pd.DataFrame({"unique_id": "C1|F01", "ds": np.arange(1, n + 1), "y": y})
+    tsb = StatsForecast(models=[TSB(alpha_d=0.2, alpha_p=0.2)], freq=1).forecast(h=forecast.MAX_H, df=df)
+    assert np.allclose(got.to_numpy(), tsb["TSB"].to_numpy()) == expect_tsb
+
+
+def _flat_customer_frames(forecast_by_target, n=30, value=100.0):
+    act = _one_series(np.full(n, value))
+    t = np.arange(2, n + 1)
+    cf = pd.DataFrame({"origin_month": t - 1, "target_month": t, "horizon": 1, "customer": "C1",
+                       "family": "F01", "customer_forecast": [forecast_by_target(x) for x in t]})
+    return act, cf
+
+
+def test_bias_correction_trailing_window_is_twelve_targets():
+    # Origin 20: the window is targets 9..20, all unbiased; target 8 is far off and must not count.
+    act, cf = _flat_customer_frames(lambda t: 1000.0 if t == 8 else 100.0)
+    out = forecast.customer_bias_corrected(cf, act, [20], (1,))
+    assert out["forecast"].iloc[0] == pytest.approx(100.0)
+
+
+def test_bias_correction_falls_back_when_trailing_ratio_is_zero():
+    act, cf = _flat_customer_frames(lambda t: 0.0 if t <= 20 else 50.0)
+    out = forecast.customer_bias_corrected(cf, act, [20], (1,))
+    assert out["forecast"].iloc[0] == pytest.approx(50.0)
+
+
+def test_order_book_falls_back_when_trailing_fill_is_zero():
+    act = _one_series(np.full(30, 100.0))
+    t = np.arange(2, 31)
+    book = pd.DataFrame({"as_of_month": t - 1, "target_month": t, "customer": "C1", "family": "F01",
+                         "confirmed_qty": np.where(t <= 20, 0.0, 40.0)})
+    out = forecast.order_book(book, act, [20], (1,))
+    assert out["forecast"].iloc[0] == pytest.approx(40.0)
+
+
+BLEND_O = 26
+BASE_ERR = {"stat_baseline": 10.0, "customer_bias_corrected": 20.0, "order_book": 30.0, "average": 25.0}
+NO_ALERTS = pd.DataFrame(columns=["family", "break_detected_at_origin", "reason"])
+
+
+def _blend_case(huge=None, origins=range(13, BLEND_O), extra=(), base=None):
+    """One series, horizon-1 candidate rows at `origins`; `huge` = (method, origin) gets error 1000.
+    `extra` adds (method, origin, target, error) rows."""
+    act = _one_series(np.random.default_rng(2).uniform(50, 150, 40).round())
+    base = BASE_ERR if base is None else base
+    rows = [(m, o, o + 1, 1000.0 if huge == (m, o) else e) for m, e in base.items() for o in origins]
+    rows += list(extra)
+    df = pd.DataFrame(rows, columns=["method", "origin_month", "target_month", "err"])
+    df = df.merge(act.rename(columns={"month": "target_month"}), on="target_month")
+    df = df.assign(horizon=df.target_month - df.origin_month, forecast=df.actual + df.err,
+                   lo80=np.nan, hi80=np.nan)
+    return df[forecast.COLS], act
+
+
+def _chosen(rows, act, alerts=NO_ALERTS):
+    _, choices = forecast.blend(rows, act, alerts, [BLEND_O])
+    return choices["chosen"].iloc[0]
+
+
+def test_blend_window_includes_origin_minus_12_and_excludes_minus_13():
+    assert _chosen(*_blend_case(huge=("stat_baseline", BLEND_O - 12))) == "customer_bias_corrected"
+    assert _chosen(*_blend_case(huge=("stat_baseline", BLEND_O - 13))) == "stat_baseline"
+
+
+def test_blend_ignores_targets_not_yet_realised():
+    leak = [("stat_baseline", BLEND_O - 2, BLEND_O + 1, 1e5)]   # target after the origin
+    assert _chosen(*_blend_case(extra=leak)) == "stat_baseline"
+
+
+def test_blend_needs_min_origins_and_breaks_ties_in_candidate_order():
+    assert _chosen(*_blend_case(origins=range(BLEND_O - 3, BLEND_O))) == "stat_baseline"
+    assert _chosen(*_blend_case(origins=range(BLEND_O - 2, BLEND_O))) == "average"
+    same = dict.fromkeys(BASE_ERR, 10.0)
+    assert _chosen(*_blend_case(base=same)) == "stat_baseline"
+
+
+def test_blend_shorter_window_when_history_unreliable():
+    rows, act = _blend_case(huge=("stat_baseline", BLEND_O - 8))
+    flagged = pd.DataFrame({"family": ["F01"], "break_detected_at_origin": [20.0], "reason": ["detected"]})
+    assert _chosen(rows, act) == "customer_bias_corrected"           # 12-origin window sees it
+    assert _chosen(rows, act, flagged) == "stat_baseline"            # 6-origin window does not
